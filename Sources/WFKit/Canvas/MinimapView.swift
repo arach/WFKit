@@ -2,31 +2,33 @@ import SwiftUI
 
 // MARK: - Minimap View
 
-struct MinimapView: View {
+public struct MinimapView: View {
     @Bindable var state: CanvasState
     let canvasSize: CGSize
     let minimapSize: CGSize = CGSize(width: 200, height: 150)
 
     @State private var isDraggingViewport = false
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.wfTheme) private var theme
 
-    var body: some View {
+    public init(state: CanvasState, canvasSize: CGSize) {
+        self.state = state
+        self.canvasSize = canvasSize
+    }
+
+    public var body: some View {
         Canvas { context, size in
-            // Theme-adaptive background matching canvas
             let backgroundRect = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 8)
             context.fill(
                 backgroundRect,
-                with: .color(DesignSystem.Colors.canvasBackground(isDark: themeManager.isDarkMode).opacity(0.9))
+                with: .color(theme.canvasBackground.opacity(0.9))
             )
 
-            // Clean border
             context.stroke(
                 Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 8),
-                with: .color(DesignSystem.Colors.borderDefault(isDark: themeManager.isDarkMode)),
+                with: .color(theme.border),
                 lineWidth: 1
             )
 
-            // Calculate scale and bounds
             guard let bounds = calculateContentBounds() else { return }
 
             let scaleX = (size.width - 20) / bounds.width
@@ -36,7 +38,6 @@ struct MinimapView: View {
             let offsetX = (size.width - bounds.width * minimapScale) / 2 - bounds.minX * minimapScale
             let offsetY = (size.height - bounds.height * minimapScale) / 2 - bounds.minY * minimapScale
 
-            // Draw connections first (behind nodes)
             for connection in state.connections {
                 if let startPos = state.portPosition(nodeId: connection.sourceNodeId, portId: connection.sourcePortId),
                    let endPos = state.portPosition(nodeId: connection.targetNodeId, portId: connection.targetPortId) {
@@ -57,7 +58,6 @@ struct MinimapView: View {
                 }
             }
 
-            // Draw nodes
             for node in state.nodes {
                 let rect = CGRect(
                     x: node.position.x * minimapScale + offsetX,
@@ -68,10 +68,8 @@ struct MinimapView: View {
 
                 let path = Path(roundedRect: rect, cornerRadius: 2)
 
-                // Fill with node type color
                 context.fill(path, with: .color(node.type.color.opacity(0.85)))
 
-                // Highlight selected nodes
                 if state.selectedNodeIds.contains(node.id) {
                     context.stroke(
                         path,
@@ -81,7 +79,6 @@ struct MinimapView: View {
                 }
             }
 
-            // Draw viewport rectangle with smooth animation
             let viewportRect = calculateViewportRect(
                 canvasSize: canvasSize,
                 minimapSize: size,
@@ -93,10 +90,9 @@ struct MinimapView: View {
 
             let viewportPath = Path(roundedRect: viewportRect, cornerRadius: 2)
 
-            // Extremely subtle viewport border (no fill)
             context.stroke(
                 viewportPath,
-                with: .color(Color(red: 0x00/255.0, green: 0x70/255.0, blue: 0xF3/255.0).opacity(0.3)),
+                with: .color(theme.accent.opacity(0.3)),
                 lineWidth: 1
             )
         }
@@ -135,13 +131,11 @@ struct MinimapView: View {
         offsetX: CGFloat,
         offsetY: CGFloat
     ) -> CGRect {
-        // Calculate the visible area in canvas coordinates
         let visibleMinX = -state.offset.width / state.scale
         let visibleMinY = -state.offset.height / state.scale
         let visibleMaxX = visibleMinX + canvasSize.width / state.scale
         let visibleMaxY = visibleMinY + canvasSize.height / state.scale
 
-        // Convert to minimap coordinates
         let x = visibleMinX * minimapScale + offsetX
         let y = visibleMinY * minimapScale + offsetY
         let width = (visibleMaxX - visibleMinX) * minimapScale
@@ -173,10 +167,8 @@ struct MinimapView: View {
             .onChanged { value in
                 isDraggingViewport = true
 
-                // Convert minimap point to canvas coordinates
                 let canvasPoint = minimapPointToCanvasPoint(value.location)
 
-                // Center the viewport on this point with smooth animation
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                     state.offset = CGSize(
                         width: canvasSize.width / 2 - canvasPoint.x * state.scale,
@@ -188,16 +180,4 @@ struct MinimapView: View {
                 isDraggingViewport = false
             }
     }
-}
-
-// MARK: - Preview
-
-#Preview("Minimap") {
-    MinimapView(
-        state: CanvasState.sampleState(),
-        canvasSize: CGSize(width: 800, height: 600)
-    )
-    .padding()
-    .frame(width: 300, height: 250)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

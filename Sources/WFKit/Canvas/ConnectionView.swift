@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Connection View (Bezier Curve)
 
-struct ConnectionView: View {
+public struct ConnectionView: View {
     let from: CGPoint
     let to: CGPoint
     let color: Color
@@ -17,15 +17,37 @@ struct ConnectionView: View {
     @State private var animationPhase: CGFloat = 0
     @State private var flowPhase: CGFloat = 0
 
-    var body: some View {
+    public init(
+        from: CGPoint,
+        to: CGPoint,
+        color: Color,
+        sourceColor: Color? = nil,
+        targetColor: Color? = nil,
+        lineWidth: CGFloat = 2.0,
+        animated: Bool = false,
+        showFlowAnimation: Bool = true,
+        isSelected: Bool = false,
+        isHovered: Bool = false
+    ) {
+        self.from = from
+        self.to = to
+        self.color = color
+        self.sourceColor = sourceColor
+        self.targetColor = targetColor
+        self.lineWidth = lineWidth
+        self.animated = animated
+        self.showFlowAnimation = showFlowAnimation
+        self.isSelected = isSelected
+        self.isHovered = isHovered
+    }
+
+    public var body: some View {
         Canvas { context, size in
             let path = bezierPath(from: from, to: to)
 
-            // Calculate effective line width and colors based on state
             let effectiveLineWidth = isSelected ? lineWidth + 1.5 : (isHovered ? lineWidth + 1.0 : lineWidth)
             let effectiveColor = isSelected ? Color.blue : (isHovered ? color.opacity(0.9) : color)
 
-            // Draw glow for selected or hovered
             if isSelected {
                 context.stroke(
                     path,
@@ -40,16 +62,13 @@ struct ConnectionView: View {
                 )
             }
 
-            // Draw subtle shadow
             context.stroke(
                 path,
                 with: .color(effectiveColor.opacity(0.15)),
                 style: StrokeStyle(lineWidth: effectiveLineWidth + 1, lineCap: .round)
             )
 
-            // Draw main line with gradient if both colors provided
             if animated {
-                // Animated dashed line for pending connections
                 context.stroke(
                     path,
                     with: .color(effectiveColor),
@@ -61,13 +80,11 @@ struct ConnectionView: View {
                     )
                 )
             } else {
-                // Use gradient if both colors are provided, otherwise solid color
                 if let srcColor = sourceColor, let tgtColor = targetColor {
                     let gradient = Gradient(colors: [
                         isSelected ? Color.blue : srcColor,
                         isSelected ? Color.blue.opacity(0.8) : tgtColor
                     ])
-                    // Create gradient from path start to end
                     context.stroke(
                         path,
                         with: .linearGradient(
@@ -85,16 +102,13 @@ struct ConnectionView: View {
                     )
                 }
 
-                // Draw flow animation (subtle moving dots)
                 if showFlowAnimation {
                     drawFlowAnimation(context: context, path: path)
                 }
             }
 
-            // Draw arrow head at the end
             drawArrowHead(context: context, path: path, color: isSelected ? Color.blue : (targetColor ?? effectiveColor))
 
-            // Draw delete button on hover
             if isHovered {
                 drawDeleteButton(context: context, path: path)
             }
@@ -123,18 +137,13 @@ struct ConnectionView: View {
         let dy = end.y - start.y
         let distance = sqrt(dx * dx + dy * dy)
 
-        // Improved control point calculation for better curves
         var controlOffset: CGFloat
 
-        // Handle edge cases: nodes directly above/below each other
         if abs(dx) < 50 {
-            // Vertical or near-vertical connection
             controlOffset = max(abs(dy) * 0.3, 80)
         } else if abs(dy) < 50 {
-            // Horizontal or near-horizontal connection
             controlOffset = min(abs(dx) * 0.5, distance * 0.4)
         } else {
-            // Diagonal connection - use distance-based offset
             controlOffset = min(max(abs(dx) * 0.4, 100), distance * 0.45)
         }
 
@@ -149,7 +158,6 @@ struct ConnectionView: View {
     // MARK: - Flow Animation
 
     private func drawFlowAnimation(context: GraphicsContext, path: Path) {
-        // Draw 3 subtle animated dots along the path
         let dotCount = 3
         let dotSize: CGFloat = 4
         let dotSpacing = 1.0 / CGFloat(dotCount + 1)
@@ -167,7 +175,6 @@ struct ConnectionView: View {
                     height: dotSize
                 ))
 
-                // Fade in/out based on position
                 let opacity = sin(position * .pi) * 0.6 + 0.2
                 context.fill(
                     dotPath,
@@ -180,16 +187,13 @@ struct ConnectionView: View {
     // MARK: - Arrow Head
 
     private func drawArrowHead(context: GraphicsContext, path: Path, color: Color) {
-        // Get the tangent at the end of the path for proper alignment
         let endPoint = path.currentPoint ?? to
         let tangentLength: CGFloat = 0.02
 
-        // Sample two points near the end to calculate tangent
         let trimmedPath = path.trimmedPath(from: max(0, 1 - tangentLength), to: 1)
         let pathPoints = extractPathPoints(trimmedPath)
 
         guard pathPoints.count >= 2 else {
-            // Fallback to simple direction calculation
             drawSimpleArrowHead(context: context, at: endPoint, color: color)
             return
         }
@@ -201,7 +205,6 @@ struct ConnectionView: View {
         let dy = lastPoint.y - secondLastPoint.y
         let angle = atan2(dy, dx)
 
-        // Smoother, more elegant filled triangle arrow
         let arrowLength: CGFloat = 12
         let arrowWidth: CGFloat = 8
 
@@ -217,10 +220,8 @@ struct ConnectionView: View {
         ))
         arrowPath.closeSubpath()
 
-        // Fill the arrow head
         context.fill(arrowPath, with: .color(color))
 
-        // Add subtle stroke for definition
         context.stroke(
             arrowPath,
             with: .color(color.opacity(0.5)),
@@ -251,7 +252,6 @@ struct ConnectionView: View {
         context.fill(arrowPath, with: .color(color))
     }
 
-    // Helper to extract points from a path
     private func extractPathPoints(_ path: Path) -> [CGPoint] {
         var points: [CGPoint] = []
         path.forEach { element in
@@ -272,11 +272,9 @@ struct ConnectionView: View {
     // MARK: - Delete Button
 
     private func drawDeleteButton(context: GraphicsContext, path: Path) {
-        // Draw a small X button at the middle of the connection
         if let midPoint = path.trimmedPath(from: 0.5, to: 0.5).currentPoint {
             let buttonRadius: CGFloat = 8
 
-            // Background circle
             var circlePath = Path()
             circlePath.addEllipse(in: CGRect(
                 x: midPoint.x - buttonRadius,
@@ -288,13 +286,10 @@ struct ConnectionView: View {
             context.fill(circlePath, with: .color(Color.red.opacity(0.8)))
             context.stroke(circlePath, with: .color(Color.white.opacity(0.3)), style: StrokeStyle(lineWidth: 1))
 
-            // X mark
             let xSize: CGFloat = 5
             var xPath = Path()
-            // First line of X
             xPath.move(to: CGPoint(x: midPoint.x - xSize / 2, y: midPoint.y - xSize / 2))
             xPath.addLine(to: CGPoint(x: midPoint.x + xSize / 2, y: midPoint.y + xSize / 2))
-            // Second line of X
             xPath.move(to: CGPoint(x: midPoint.x + xSize / 2, y: midPoint.y - xSize / 2))
             xPath.addLine(to: CGPoint(x: midPoint.x - xSize / 2, y: midPoint.y + xSize / 2))
 
@@ -305,13 +300,20 @@ struct ConnectionView: View {
 
 // MARK: - Pending Connection View
 
-struct PendingConnectionView: View {
+public struct PendingConnectionView: View {
     let from: CGPoint
     let to: CGPoint
     let color: Color
     var isSnapped: Bool = false
 
-    var body: some View {
+    public init(from: CGPoint, to: CGPoint, color: Color, isSnapped: Bool = false) {
+        self.from = from
+        self.to = to
+        self.color = color
+        self.isSnapped = isSnapped
+    }
+
+    public var body: some View {
         ConnectionView(
             from: from,
             to: to,
@@ -325,12 +327,18 @@ struct PendingConnectionView: View {
 
 // MARK: - Connection Preview View (for hover)
 
-struct ConnectionPreviewView: View {
+public struct ConnectionPreviewView: View {
     let from: CGPoint
     let to: CGPoint
     let color: Color
 
-    var body: some View {
+    public init(from: CGPoint, to: CGPoint, color: Color) {
+        self.from = from
+        self.to = to
+        self.color = color
+    }
+
+    public var body: some View {
         ConnectionView(
             from: from,
             to: to,
@@ -339,38 +347,5 @@ struct ConnectionPreviewView: View {
             animated: false,
             showFlowAnimation: false
         )
-    }
-}
-
-// MARK: - Preview
-
-#Preview("Connection View") {
-    VStack {
-        // Horizontal connection
-        ConnectionView(
-            from: CGPoint(x: 50, y: 100),
-            to: CGPoint(x: 250, y: 100),
-            color: .blue
-        )
-        .frame(width: 300, height: 200)
-        .background(Color(nsColor: .windowBackgroundColor))
-
-        // Diagonal connection
-        ConnectionView(
-            from: CGPoint(x: 50, y: 50),
-            to: CGPoint(x: 250, y: 150),
-            color: .purple
-        )
-        .frame(width: 300, height: 200)
-        .background(Color(nsColor: .windowBackgroundColor))
-
-        // Pending connection (animated)
-        PendingConnectionView(
-            from: CGPoint(x: 50, y: 100),
-            to: CGPoint(x: 200, y: 80),
-            color: .orange
-        )
-        .frame(width: 300, height: 200)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

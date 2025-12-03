@@ -2,46 +2,52 @@ import SwiftUI
 
 // MARK: - Toolbar View
 
-struct ToolbarView: View {
+public struct ToolbarView: View {
     @Bindable var state: CanvasState
     @Binding var showNodePalette: Bool
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.wfTheme) private var theme
 
-    var body: some View {
+    public init(state: CanvasState, showNodePalette: Binding<Bool>) {
+        self.state = state
+        self._showNodePalette = showNodePalette
+    }
+
+    public var body: some View {
         HStack(spacing: 12) {
-            // Add node button with accent color
             Button(action: { showNodePalette.toggle() }) {
                 Label("Add Node", systemImage: "plus.circle.fill")
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0x00/255.0, green: 0x70/255.0, blue: 0xF3/255.0))
+            .tint(theme.accent)
             .popover(isPresented: $showNodePalette) {
                 NodePaletteView(state: state, isPresented: $showNodePalette)
             }
 
             Divider()
                 .frame(height: 20)
-                .background(Color.gray.opacity(0.3))
+                .background(theme.divider.opacity(0.3))
 
-            // Zoom controls
             HStack(spacing: 4) {
                 Button(action: { state.zoomOut() }) {
                     Image(systemName: "minus.magnifyingglass")
+                        .foregroundColor(theme.textSecondary)
                 }
                 .buttonStyle(.borderless)
 
                 Text("\(Int(state.scale * 100))%")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
+                    .foregroundColor(theme.textSecondary)
                     .frame(width: 45)
 
                 Button(action: { state.zoomIn() }) {
                     Image(systemName: "plus.magnifyingglass")
+                        .foregroundColor(theme.textSecondary)
                 }
                 .buttonStyle(.borderless)
 
                 Button(action: { state.resetView() }) {
                     Image(systemName: "1.magnifyingglass")
+                        .foregroundColor(theme.textSecondary)
                 }
                 .buttonStyle(.borderless)
                 .help("Reset to 100%")
@@ -49,14 +55,13 @@ struct ToolbarView: View {
 
             Divider()
                 .frame(height: 20)
-                .background(Color.gray.opacity(0.3))
+                .background(theme.divider.opacity(0.3))
 
-            // Selection info
             if state.hasSelection {
                 HStack(spacing: 8) {
                     Text("\(state.selectedNodeIds.count) selected")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(DesignSystem.Colors.textSecondary(isDark: themeManager.isDarkMode))
+                        .foregroundColor(theme.textSecondary)
 
                     Button(action: { state.removeSelectedNodes() }) {
                         Image(systemName: "trash")
@@ -68,49 +73,55 @@ struct ToolbarView: View {
 
             Spacer()
 
-            // Theme toggle button
             Menu {
-                ForEach(AppTheme.allCases) { theme in
+                ForEach(WFAppearance.allCases) { appearance in
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.3)) {
-                            themeManager.currentTheme = theme
+                            theme.appearance = appearance
                         }
                     }) {
                         HStack {
-                            Image(systemName: theme.icon)
-                            Text(theme.displayName)
-                            if themeManager.currentTheme == theme {
+                            Image(systemName: appearance.icon)
+                            Text(appearance.displayName)
+                            if theme.appearance == appearance {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 }
             } label: {
-                Image(systemName: themeManager.currentTheme.icon)
+                Image(systemName: theme.appearance.icon)
                     .font(.system(size: 13))
-                    .foregroundColor(DesignSystem.Colors.textSecondary(isDark: themeManager.isDarkMode))
+                    .foregroundColor(theme.textSecondary)
             }
             .buttonStyle(.borderless)
             .help("Change Appearance")
 
             Divider()
                 .frame(height: 20)
-                .background(DesignSystem.Colors.divider(isDark: themeManager.isDarkMode).opacity(0.3))
+                .background(theme.divider.opacity(0.3))
 
-            // Stats with monospace
             HStack(spacing: 16) {
-                Label("\(state.nodes.count)", systemImage: "square.stack.3d.up")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(DesignSystem.Colors.textSecondary(isDark: themeManager.isDarkMode))
+                HStack(spacing: 4) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 11))
+                    Text("\(state.nodes.count)")
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                .foregroundColor(theme.textSecondary)
 
-                Label("\(state.connections.count)", systemImage: "arrow.right")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(DesignSystem.Colors.textSecondary(isDark: themeManager.isDarkMode))
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11))
+                    Text("\(state.connections.count)")
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                .foregroundColor(theme.textSecondary)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(DesignSystem.Colors.toolbarBackground(isDark: themeManager.isDarkMode))
+        .background(theme.toolbarBackground)
     }
 }
 
@@ -141,7 +152,6 @@ struct NodePaletteView: View {
     }
 
     private func addNode(type: NodeType) {
-        // Add node at center of visible canvas
         let centerPosition = CGPoint(
             x: 300 - state.offset.width / state.scale,
             y: 300 - state.offset.height / state.scale
@@ -177,17 +187,5 @@ struct NodeTypeButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Preview
-
-#Preview("Toolbar") {
-    VStack {
-        ToolbarView(
-            state: CanvasState.sampleState(),
-            showNodePalette: .constant(false)
-        )
-        Spacer()
     }
 }

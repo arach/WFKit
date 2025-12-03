@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Color Extension for Hex Support
 
-extension Color {
+public extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
@@ -27,7 +27,7 @@ extension Color {
 
 // MARK: - Node Types
 
-enum NodeType: String, Codable, CaseIterable, Identifiable {
+public enum NodeType: String, Codable, CaseIterable, Identifiable, Sendable {
     case trigger = "Trigger"
     case llm = "LLM"
     case transform = "Transform"
@@ -35,9 +35,9 @@ enum NodeType: String, Codable, CaseIterable, Identifiable {
     case action = "Action"
     case output = "Output"
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var icon: String {
+    public var icon: String {
         switch self {
         case .trigger: return "bolt.fill"
         case .llm: return "brain"
@@ -48,7 +48,7 @@ enum NodeType: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var color: Color {
+    public var color: Color {
         switch self {
         case .trigger: return Color(hex: "#FF9F0A") // Tactical orange
         case .llm: return Color(hex: "#BF5AF2") // Tactical purple
@@ -59,7 +59,7 @@ enum NodeType: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var defaultTitle: String {
+    public var defaultTitle: String {
         switch self {
         case .trigger: return "Start"
         case .llm: return "AI Process"
@@ -73,49 +73,49 @@ enum NodeType: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Port (Connection Point)
 
-struct Port: Identifiable, Codable, Hashable {
-    let id: UUID
-    var label: String
-    var isInput: Bool
+public struct Port: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public var label: String
+    public var isInput: Bool
 
-    init(id: UUID = UUID(), label: String, isInput: Bool) {
+    public init(id: UUID = UUID(), label: String, isInput: Bool) {
         self.id = id
         self.label = label
         self.isInput = isInput
     }
 
-    static func input(_ label: String = "In") -> Port {
+    public static func input(_ label: String = "In") -> Port {
         Port(label: label, isInput: true)
     }
 
-    static func output(_ label: String = "Out") -> Port {
+    public static func output(_ label: String = "Out") -> Port {
         Port(label: label, isInput: false)
     }
 }
 
 // MARK: - Workflow Node
 
-struct WorkflowNode: Identifiable, Codable, Hashable {
-    let id: UUID
-    var type: NodeType
-    var title: String
-    var position: CGPoint
-    var size: CGSize
-    var inputs: [Port]
-    var outputs: [Port]
-    var configuration: NodeConfiguration
-    var isCollapsed: Bool
-    var customColor: String? // Store as hex string for Codable support
+public struct WorkflowNode: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public var type: NodeType
+    public var title: String
+    public var position: CGPoint
+    public var size: CGSize
+    public var inputs: [Port]
+    public var outputs: [Port]
+    public var configuration: NodeConfiguration
+    public var isCollapsed: Bool
+    public var customColor: String? // Store as hex string for Codable support
 
     // Computed property for getting the effective color
-    var effectiveColor: Color {
+    public var effectiveColor: Color {
         if let hexColor = customColor {
             return Color(hex: hexColor)
         }
         return type.color
     }
 
-    init(
+    public init(
         id: UUID = UUID(),
         type: NodeType,
         title: String? = nil,
@@ -139,7 +139,7 @@ struct WorkflowNode: Identifiable, Codable, Hashable {
         self.customColor = customColor
     }
 
-    static func defaultInputs(for type: NodeType) -> [Port] {
+    public static func defaultInputs(for type: NodeType) -> [Port] {
         switch type {
         case .trigger:
             return [] // Triggers have no inputs
@@ -150,7 +150,7 @@ struct WorkflowNode: Identifiable, Codable, Hashable {
         }
     }
 
-    static func defaultOutputs(for type: NodeType) -> [Port] {
+    public static func defaultOutputs(for type: NodeType) -> [Port] {
         switch type {
         case .output:
             return [] // Output nodes have no outputs
@@ -161,43 +161,41 @@ struct WorkflowNode: Identifiable, Codable, Hashable {
         }
     }
 
-    // Hashable conformance for CGPoint and CGSize
-    static func == (lhs: WorkflowNode, rhs: WorkflowNode) -> Bool {
+    // Hashable conformance
+    public static func == (lhs: WorkflowNode, rhs: WorkflowNode) -> Bool {
         lhs.id == rhs.id
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
 }
 
-// Note: CGPoint and CGSize are already Codable in macOS 14+
-
 // MARK: - Node Configuration
 
-struct NodeConfiguration: Codable, Hashable {
+public struct NodeConfiguration: Codable, Hashable, Sendable {
     // LLM settings
-    var prompt: String?
-    var systemPrompt: String?
-    var model: String?
-    var temperature: Double?
-    var maxTokens: Int?
+    public var prompt: String?
+    public var systemPrompt: String?
+    public var model: String?
+    public var temperature: Double?
+    public var maxTokens: Int?
 
     // Transform settings
-    var transformType: String?
-    var expression: String?
+    public var transformType: String?
+    public var expression: String?
 
     // Condition settings
-    var condition: String?
+    public var condition: String?
 
     // Action settings
-    var actionType: String?
-    var actionConfig: [String: String]?
+    public var actionType: String?
+    public var actionConfig: [String: String]?
 
     // Generic key-value for extensibility
-    var customFields: [String: String]?
+    public var customFields: [String: String]?
 
-    init(
+    public init(
         prompt: String? = nil,
         systemPrompt: String? = nil,
         model: String? = nil,

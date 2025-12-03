@@ -4,47 +4,59 @@ import AppKit
 
 // MARK: - Canvas Snapshot (for Undo/Redo)
 
-struct CanvasSnapshot: Equatable {
-    let nodes: [WorkflowNode]
-    let connections: [WorkflowConnection]
-    let selectedNodeIds: Set<UUID>
+public struct CanvasSnapshot: Equatable, Sendable {
+    public let nodes: [WorkflowNode]
+    public let connections: [WorkflowConnection]
+    public let selectedNodeIds: Set<UUID>
 
-    static func == (lhs: CanvasSnapshot, rhs: CanvasSnapshot) -> Bool {
+    public static func == (lhs: CanvasSnapshot, rhs: CanvasSnapshot) -> Bool {
         lhs.nodes == rhs.nodes &&
         lhs.connections == rhs.connections &&
         lhs.selectedNodeIds == rhs.selectedNodeIds
     }
 }
 
+// MARK: - Serializable Data
+
+public struct WorkflowData: Codable, Sendable {
+    public var nodes: [WorkflowNode]
+    public var connections: [WorkflowConnection]
+
+    public init(nodes: [WorkflowNode], connections: [WorkflowConnection]) {
+        self.nodes = nodes
+        self.connections = connections
+    }
+}
+
 // MARK: - Canvas State (Observable)
 
 @Observable
-final class CanvasState {
+public final class CanvasState {
     // MARK: - Workflow Data
-    var nodes: [WorkflowNode] = []
-    var connections: [WorkflowConnection] = []
+    public var nodes: [WorkflowNode] = []
+    public var connections: [WorkflowConnection] = []
 
     // MARK: - Canvas Transform
-    var offset: CGSize = .zero
-    var scale: CGFloat = 1.0
-    var minScale: CGFloat = 0.25
-    var maxScale: CGFloat = 3.0
-    var targetScale: CGFloat = 1.0 // For smooth zoom animations
+    public var offset: CGSize = .zero
+    public var scale: CGFloat = 1.0
+    public var minScale: CGFloat = 0.25
+    public var maxScale: CGFloat = 3.0
+    public var targetScale: CGFloat = 1.0 // For smooth zoom animations
 
     // MARK: - Selection State
-    var selectedNodeIds: Set<UUID> = []
-    var hoveredNodeId: UUID? = nil
-    var selectedConnectionId: UUID? = nil
-    var hoveredConnectionId: UUID? = nil
+    public var selectedNodeIds: Set<UUID> = []
+    public var hoveredNodeId: UUID? = nil
+    public var selectedConnectionId: UUID? = nil
+    public var hoveredConnectionId: UUID? = nil
 
     // MARK: - Connection State
-    var pendingConnection: PendingConnection? = nil
-    var hoveredPortId: UUID? = nil
-    var validDropPortIds: Set<UUID> = []
+    public var pendingConnection: PendingConnection? = nil
+    public var hoveredPortId: UUID? = nil
+    public var validDropPortIds: Set<UUID> = []
 
     // MARK: - Interaction State
-    var isDragging: Bool = false
-    var isPanning: Bool = false
+    public var isDragging: Bool = false
+    public var isPanning: Bool = false
 
     // MARK: - Drag Snapshot (for smooth dragging from initial position)
     private var dragSnapshot: [UUID: CGPoint] = [:]
@@ -55,27 +67,31 @@ final class CanvasState {
     private let maxUndoStackSize = 50
     private var isPerformingUndoRedo = false
 
+    // MARK: - Initialization
+
+    public init() {}
+
     // MARK: - Computed Properties
 
-    var selectedNodes: [WorkflowNode] {
+    public var selectedNodes: [WorkflowNode] {
         nodes.filter { selectedNodeIds.contains($0.id) }
     }
 
-    var hasSelection: Bool {
+    public var hasSelection: Bool {
         !selectedNodeIds.isEmpty
     }
 
-    var singleSelectedNode: WorkflowNode? {
+    public var singleSelectedNode: WorkflowNode? {
         guard selectedNodeIds.count == 1,
               let id = selectedNodeIds.first else { return nil }
         return nodes.first { $0.id == id }
     }
 
-    var canUndo: Bool {
+    public var canUndo: Bool {
         !undoStack.isEmpty
     }
 
-    var canRedo: Bool {
+    public var canRedo: Bool {
         !redoStack.isEmpty
     }
 
@@ -118,7 +134,7 @@ final class CanvasState {
         redoStack.removeAll()
     }
 
-    func undo() {
+    public func undo() {
         guard !undoStack.isEmpty else { return }
 
         // Save current state to redo stack
@@ -129,7 +145,7 @@ final class CanvasState {
         restoreSnapshot(snapshot)
     }
 
-    func redo() {
+    public func redo() {
         guard !redoStack.isEmpty else { return }
 
         // Save current state to undo stack
@@ -142,19 +158,19 @@ final class CanvasState {
 
     // MARK: - Node Operations
 
-    func addNode(_ node: WorkflowNode) {
+    public func addNode(_ node: WorkflowNode) {
         saveSnapshot()
         nodes.append(node)
     }
 
-    func addNode(type: NodeType, at position: CGPoint) {
+    public func addNode(type: NodeType, at position: CGPoint) {
         saveSnapshot()
         let node = WorkflowNode(type: type, position: position)
         nodes.append(node)
         selectNode(node.id, exclusive: true)
     }
 
-    func removeNode(_ id: UUID) {
+    public func removeNode(_ id: UUID) {
         saveSnapshot()
         nodes.removeAll { $0.id == id }
         // Remove connections involving this node
@@ -162,7 +178,7 @@ final class CanvasState {
         selectedNodeIds.remove(id)
     }
 
-    func removeSelectedNodes() {
+    public func removeSelectedNodes() {
         guard !selectedNodeIds.isEmpty else { return }
         saveSnapshot()
         for id in selectedNodeIds {
@@ -176,20 +192,20 @@ final class CanvasState {
         selectedNodeIds.removeAll()
     }
 
-    func updateNode(_ node: WorkflowNode) {
+    public func updateNode(_ node: WorkflowNode) {
         saveSnapshot()
         if let index = nodes.firstIndex(where: { $0.id == node.id }) {
             nodes[index] = node
         }
     }
 
-    func moveNode(_ id: UUID, to position: CGPoint) {
+    public func moveNode(_ id: UUID, to position: CGPoint) {
         if let index = nodes.firstIndex(where: { $0.id == id }) {
             nodes[index].position = position
         }
     }
 
-    func moveSelectedNodes(by delta: CGSize) {
+    public func moveSelectedNodes(by delta: CGSize) {
         for id in selectedNodeIds {
             if let index = nodes.firstIndex(where: { $0.id == id }) {
                 nodes[index].position.x += delta.width
@@ -198,7 +214,7 @@ final class CanvasState {
         }
     }
 
-    func beginNodeMove() {
+    public func beginNodeMove() {
         saveSnapshot()
         // Capture initial positions of selected nodes
         dragSnapshot.removeAll()
@@ -209,7 +225,7 @@ final class CanvasState {
         }
     }
 
-    func moveSelectedNodesFromSnapshot(by delta: CGSize) {
+    public func moveSelectedNodesFromSnapshot(by delta: CGSize) {
         for id in selectedNodeIds {
             if let index = nodes.firstIndex(where: { $0.id == id }),
                let initialPosition = dragSnapshot[id] {
@@ -221,13 +237,13 @@ final class CanvasState {
         }
     }
 
-    func endNodeMove() {
+    public func endNodeMove() {
         dragSnapshot.removeAll()
     }
 
     // MARK: - Selection Operations
 
-    func selectNode(_ id: UUID, exclusive: Bool = false) {
+    public func selectNode(_ id: UUID, exclusive: Bool = false) {
         if exclusive {
             selectedNodeIds = [id]
         } else {
@@ -235,11 +251,11 @@ final class CanvasState {
         }
     }
 
-    func deselectNode(_ id: UUID) {
+    public func deselectNode(_ id: UUID) {
         selectedNodeIds.remove(id)
     }
 
-    func toggleNodeSelection(_ id: UUID) {
+    public func toggleNodeSelection(_ id: UUID) {
         if selectedNodeIds.contains(id) {
             selectedNodeIds.remove(id)
         } else {
@@ -247,27 +263,27 @@ final class CanvasState {
         }
     }
 
-    func clearSelection() {
+    public func clearSelection() {
         selectedNodeIds.removeAll()
         selectedConnectionId = nil
     }
 
-    func selectAll() {
+    public func selectAll() {
         selectedNodeIds = Set(nodes.map { $0.id })
     }
 
-    func selectConnection(_ id: UUID) {
+    public func selectConnection(_ id: UUID) {
         selectedConnectionId = id
         selectedNodeIds.removeAll() // Deselect nodes when selecting a connection
     }
 
-    func deselectConnection() {
+    public func deselectConnection() {
         selectedConnectionId = nil
     }
 
     // MARK: - Connection Operations
 
-    func addConnection(_ connection: WorkflowConnection) {
+    public func addConnection(_ connection: WorkflowConnection) {
         // Prevent duplicate connections
         guard !connections.contains(where: {
             $0.sourceNodeId == connection.sourceNodeId &&
@@ -283,12 +299,12 @@ final class CanvasState {
         connections.append(connection)
     }
 
-    func removeConnection(_ id: UUID) {
+    public func removeConnection(_ id: UUID) {
         saveSnapshot()
         connections.removeAll { $0.id == id }
     }
 
-    func removeConnectionsForPort(nodeId: UUID, portId: UUID) {
+    public func removeConnectionsForPort(nodeId: UUID, portId: UUID) {
         saveSnapshot()
         connections.removeAll {
             ($0.sourceNodeId == nodeId && $0.sourcePortId == portId) ||
@@ -298,12 +314,12 @@ final class CanvasState {
 
     // MARK: - Canvas Operations
 
-    func resetView() {
+    public func resetView() {
         offset = .zero
         scale = 1.0
     }
 
-    func zoomIn(animated: Bool = true) {
+    public func zoomIn(animated: Bool = true) {
         let newScale = min(scale * 1.25, maxScale)
         if animated {
             targetScale = newScale
@@ -313,7 +329,7 @@ final class CanvasState {
         }
     }
 
-    func zoomOut(animated: Bool = true) {
+    public func zoomOut(animated: Bool = true) {
         let newScale = max(scale / 1.25, minScale)
         if animated {
             targetScale = newScale
@@ -323,7 +339,7 @@ final class CanvasState {
         }
     }
 
-    func setZoom(to newScale: CGFloat, animated: Bool = true) {
+    public func setZoom(to newScale: CGFloat, animated: Bool = true) {
         let clampedScale = max(minScale, min(newScale, maxScale))
         if animated {
             targetScale = clampedScale
@@ -333,7 +349,7 @@ final class CanvasState {
         }
     }
 
-    func zoomToFit(in size: CGSize, padding: CGFloat = 50) {
+    public func zoomToFit(in size: CGSize, padding: CGFloat = 50) {
         guard !nodes.isEmpty else {
             resetView()
             return
@@ -361,17 +377,17 @@ final class CanvasState {
         )
     }
 
-    func zoomToward(point: CGPoint, scaleFactor: CGFloat, canvasSize: CGSize) {
+    public func zoomToward(point: CGPoint, scaleFactor: CGFloat, canvasSize: CGSize) {
         let newScale = max(minScale, min(scale * scaleFactor, maxScale))
 
         // Calculate the canvas point under the cursor
-        let canvasPoint = canvasPoint(from: point)
+        let canvasPointValue = canvasPoint(from: point)
 
         // Apply the new scale
         scale = newScale
 
         // Adjust offset to keep the canvas point under the cursor
-        let newScreenPoint = screenPoint(from: canvasPoint)
+        let newScreenPoint = screenPoint(from: canvasPointValue)
         offset.width += point.x - newScreenPoint.x
         offset.height += point.y - newScreenPoint.y
     }
@@ -380,17 +396,16 @@ final class CanvasState {
 
     private let gridSize: CGFloat = 20
 
-    func snapToGrid(_ point: CGPoint) -> CGPoint {
+    public func snapToGrid(_ point: CGPoint) -> CGPoint {
         CGPoint(
             x: round(point.x / gridSize) * gridSize,
             y: round(point.y / gridSize) * gridSize
         )
     }
 
-    func snapSelectedNodesToGrid() {
+    public func snapSelectedNodesToGrid() {
         for id in selectedNodeIds {
             if let index = nodes.firstIndex(where: { $0.id == id }) {
-                // Snap to grid (already returns rounded values from snapToGrid)
                 nodes[index].position = snapToGrid(nodes[index].position)
             }
         }
@@ -398,13 +413,13 @@ final class CanvasState {
 
     // MARK: - Keyboard Navigation
 
-    func nudgeSelectedNodes(by delta: CGSize) {
+    public func nudgeSelectedNodes(by delta: CGSize) {
         guard !selectedNodeIds.isEmpty else { return }
         saveSnapshot()
         moveSelectedNodes(by: delta)
     }
 
-    func selectNextNode() {
+    public func selectNextNode() {
         guard !nodes.isEmpty else { return }
 
         if let currentId = selectedNodeIds.first,
@@ -417,7 +432,7 @@ final class CanvasState {
         }
     }
 
-    func selectPreviousNode() {
+    public func selectPreviousNode() {
         guard !nodes.isEmpty else { return }
 
         if let currentId = selectedNodeIds.first,
@@ -432,14 +447,14 @@ final class CanvasState {
 
     // MARK: - Coordinate Conversion
 
-    func canvasPoint(from screenPoint: CGPoint) -> CGPoint {
+    public func canvasPoint(from screenPoint: CGPoint) -> CGPoint {
         CGPoint(
             x: (screenPoint.x - offset.width) / scale,
             y: (screenPoint.y - offset.height) / scale
         )
     }
 
-    func screenPoint(from canvasPoint: CGPoint) -> CGPoint {
+    public func screenPoint(from canvasPoint: CGPoint) -> CGPoint {
         CGPoint(
             x: canvasPoint.x * scale + offset.width,
             y: canvasPoint.y * scale + offset.height
@@ -448,7 +463,7 @@ final class CanvasState {
 
     // MARK: - Hit Testing
 
-    func nodeAt(point: CGPoint) -> WorkflowNode? {
+    public func nodeAt(point: CGPoint) -> WorkflowNode? {
         // Return topmost node (last in array) at point
         nodes.last { node in
             let rect = CGRect(origin: node.position, size: node.size)
@@ -456,7 +471,7 @@ final class CanvasState {
         }
     }
 
-    func connectionAt(point: CGPoint, tolerance: CGFloat = 10) -> UUID? {
+    public func connectionAt(point: CGPoint, tolerance: CGFloat = 10) -> UUID? {
         // Iterate connections in reverse order (topmost first)
         for connection in connections.reversed() {
             guard let startPos = portPosition(nodeId: connection.sourceNodeId, portId: connection.sourcePortId),
@@ -518,7 +533,7 @@ final class CanvasState {
 
     // MARK: - Port Positions
 
-    func portPosition(nodeId: UUID, portId: UUID) -> CGPoint? {
+    public func portPosition(nodeId: UUID, portId: UUID) -> CGPoint? {
         guard let node = nodes.first(where: { $0.id == nodeId }) else { return nil }
 
         // Check inputs
@@ -546,7 +561,7 @@ final class CanvasState {
 
     // MARK: - Port Hit Testing
 
-    func portAt(canvasPoint: CGPoint, tolerance: CGFloat = 15) -> (nodeId: UUID, portId: UUID, isInput: Bool)? {
+    public func portAt(canvasPoint: CGPoint, tolerance: CGFloat = 15) -> (nodeId: UUID, portId: UUID, isInput: Bool)? {
         for node in nodes {
             // Check input ports
             for (index, port) in node.inputs.enumerated() {
@@ -592,7 +607,7 @@ final class CanvasState {
 
     // MARK: - Connection Validation
 
-    func canConnect(from sourceAnchor: ConnectionAnchor, to targetAnchor: ConnectionAnchor) -> Bool {
+    public func canConnect(from sourceAnchor: ConnectionAnchor, to targetAnchor: ConnectionAnchor) -> Bool {
         // Cannot connect a port to itself
         if sourceAnchor.nodeId == targetAnchor.nodeId && sourceAnchor.portId == targetAnchor.portId {
             return false
@@ -621,7 +636,7 @@ final class CanvasState {
         return !alreadyExists
     }
 
-    func updateValidDropPorts(for sourceAnchor: ConnectionAnchor) {
+    public func updateValidDropPorts(for sourceAnchor: ConnectionAnchor) {
         validDropPortIds.removeAll()
 
         for node in nodes {
@@ -662,7 +677,7 @@ final class CanvasState {
 
     // MARK: - Clipboard Operations
 
-    func copySelectedNodes() {
+    public func copySelectedNodes() {
         guard !selectedNodeIds.isEmpty else { return }
 
         let selectedNodesData = nodes.filter { selectedNodeIds.contains($0.id) }
@@ -685,7 +700,7 @@ final class CanvasState {
         pasteboard.setString(jsonString, forType: .string)
     }
 
-    func pasteNodes() {
+    public func pasteNodes() {
         let pasteboard = NSPasteboard.general
         guard let jsonString = pasteboard.string(forType: .string),
               let data = jsonString.data(using: .utf8),
@@ -708,8 +723,7 @@ final class CanvasState {
             idMapping[oldNode.id] = newId
             newNodeIds.insert(newId)
 
-            var newNode = oldNode
-            newNode = WorkflowNode(
+            let newNode = WorkflowNode(
                 id: newId,
                 type: oldNode.type,
                 title: oldNode.title,
@@ -744,7 +758,7 @@ final class CanvasState {
         selectedNodeIds = newNodeIds
     }
 
-    func duplicateSelectedNodes() {
+    public func duplicateSelectedNodes() {
         guard !selectedNodeIds.isEmpty else { return }
 
         // Copy to clipboard and paste (reuses the logic)
@@ -754,7 +768,7 @@ final class CanvasState {
 
     // MARK: - Node Ordering Operations
 
-    func bringSelectedToFront() {
+    public func bringSelectedToFront() {
         guard !selectedNodeIds.isEmpty else { return }
         saveSnapshot()
 
@@ -766,7 +780,7 @@ final class CanvasState {
         nodes = unselected + selected
     }
 
-    func sendSelectedToBack() {
+    public func sendSelectedToBack() {
         guard !selectedNodeIds.isEmpty else { return }
         saveSnapshot()
 
@@ -778,23 +792,9 @@ final class CanvasState {
         nodes = selected + unselected
     }
 
-    // MARK: - Node Color Operations
-
-    func changeNodeColor(_ nodeId: UUID, to color: Color) {
-        guard let index = nodes.firstIndex(where: { $0.id == nodeId }) else { return }
-        saveSnapshot()
-
-        // Update node type based on color (approximate matching)
-        // This is a simplified approach - in a real app you might store custom colors
-        let nodeTypes: [NodeType] = [.trigger, .llm, .transform, .condition, .action, .output]
-        if let matchingType = nodeTypes.first(where: { $0.color == color }) {
-            nodes[index].type = matchingType
-        }
-    }
-
     // MARK: - Serialization
 
-    func exportJSON() -> String? {
+    public func exportJSON() -> String? {
         let data = WorkflowData(nodes: nodes, connections: connections)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -802,7 +802,7 @@ final class CanvasState {
         return String(data: jsonData, encoding: .utf8)
     }
 
-    func importJSON(_ json: String) -> Bool {
+    public func importJSON(_ json: String) -> Bool {
         guard let data = json.data(using: .utf8),
               let workflowData = try? JSONDecoder().decode(WorkflowData.self, from: data) else {
             return false
@@ -813,16 +813,9 @@ final class CanvasState {
     }
 }
 
-// MARK: - Serializable Data
-
-struct WorkflowData: Codable {
-    var nodes: [WorkflowNode]
-    var connections: [WorkflowConnection]
-}
-
 // MARK: - Sample Data
 
-extension CanvasState {
+public extension CanvasState {
     static func sampleState() -> CanvasState {
         let state = CanvasState()
 
