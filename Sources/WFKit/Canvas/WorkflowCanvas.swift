@@ -1,6 +1,55 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Overlay Button Style
+
+private struct OverlayButtonStyle: ButtonStyle {
+    @Environment(\.wfTheme) private var theme
+    var isDestructive: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(configuration.isPressed
+                        ? (isDestructive ? theme.error.opacity(0.2) : theme.accent.opacity(0.2))
+                        : Color.clear)
+            )
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+private struct HoverableOverlayButton<Content: View>: View {
+    let action: () -> Void
+    let isDestructive: Bool
+    @ViewBuilder let content: () -> Content
+    @State private var isHovered = false
+    @Environment(\.wfTheme) private var theme
+
+    init(isDestructive: Bool = false, action: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
+        self.isDestructive = isDestructive
+        self.action = action
+        self.content = content
+    }
+
+    var body: some View {
+        Button(action: action) {
+            content()
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isHovered
+                            ? (isDestructive ? theme.error.opacity(0.15) : theme.textSecondary.opacity(0.15))
+                            : Color.clear)
+                )
+        }
+        .buttonStyle(OverlayButtonStyle(isDestructive: isDestructive))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
 // MARK: - Workflow Canvas View
 
 public struct WorkflowCanvas: View {
@@ -67,7 +116,12 @@ public struct WorkflowCanvas: View {
                 .simultaneousGesture(backgroundPanGesture())
                 .simultaneousGesture(magnificationGesture)
                 .onTapGesture {
-                    state.clearSelection()
+                    // Cancel connection mode if active
+                    if state.isConnecting {
+                        state.cancelPendingConnection()
+                    } else {
+                        state.clearSelection()
+                    }
                     isFocused = true
                 }
                 .coordinateSpace(name: "canvas")
@@ -103,12 +157,140 @@ public struct WorkflowCanvas: View {
                 .offset(state.offset)
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: state.scale)
 
-            // Minimap overlay (bottom-right corner)
+            // Minimap overlay (bottom-left corner)
             minimapOverlay(canvasSize: geometry.size)
 
             // Pan mode indicator (top-left corner)
             panModeIndicator
+
+            // Connection mode indicator (top-left corner, takes precedence over pan)
+            connectionModeIndicator
+
+            // Controls overlay (top-right corner)
+            canvasControlsOverlay
         }
+    }
+
+    // MARK: - Canvas Controls Overlay
+
+    @ViewBuilder
+    private var canvasControlsOverlay: some View {
+        VStack {
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    // Zoom controls
+                    zoomControlsPanel
+
+                    // Selection actions (only when something selected)
+                    if state.hasSelection {
+                        selectionActionsPanel
+                    }
+                }
+                .padding(16)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var zoomControlsPanel: some View {
+        HStack(spacing: 0) {
+            HoverableOverlayButton(action: { state.zoomOut() }) {
+                Image(systemName: "minus")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 32, height: 28)
+            }
+            .help("Zoom Out (⌘-)")
+
+            // Zoom percentage badge
+            Text("\(Int(state.scale * 100))%")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(theme.sectionBackground.opacity(0.8))
+                .clipShape(RoundedRectangle(cornerRadius: max(theme.panelRadius - 2, 2)))
+
+            HoverableOverlayButton(action: { state.zoomIn() }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 32, height: 28)
+            }
+            .help("Zoom In (⌘+)")
+
+            Divider()
+                .frame(height: 16)
+                .padding(.leading, 4)
+
+            HoverableOverlayButton(action: { state.resetView() }) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 32, height: 28)
+            }
+            .help("Fit to View (⌘0)")
+        }
+        .foregroundColor(theme.textSecondary)
+        .padding(.leading, 2)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+        .background(theme.panelBackground.opacity(0.95))
+        .clipShape(RoundedRectangle(cornerRadius: theme.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.panelRadius)
+                .strokeBorder(theme.border.opacity(0.5), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 2)
+    }
+
+    @ViewBuilder
+    private var selectionActionsPanel: some View {
+        HStack(spacing: 0) {
+            // Selection badge
+            HStack(spacing: 4) {
+                Text("\(state.selectedNodeIds.count)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                Text(state.selectedNodeIds.count == 1 ? "node" : "nodes")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(theme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(theme.accent.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: max(theme.panelRadius - 2, 2)))
+
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, 6)
+
+            HoverableOverlayButton(action: { state.duplicateSelectedNodes() }) {
+                Image(systemName: "plus.square.on.square")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 32, height: 28)
+            }
+            .foregroundColor(theme.textSecondary)
+            .help("Duplicate (⌘D)")
+
+            HoverableOverlayButton(isDestructive: true, action: { state.removeSelectedNodes() }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 32, height: 28)
+            }
+            .foregroundColor(theme.error.opacity(0.85))
+            .help("Delete (⌫)")
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+        .background(theme.panelBackground.opacity(0.95))
+        .clipShape(RoundedRectangle(cornerRadius: theme.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.panelRadius)
+                .strokeBorder(theme.border.opacity(0.5), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 2)
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .animation(.easeInOut(duration: 0.15), value: state.hasSelection)
     }
 
     @ViewBuilder
@@ -148,6 +330,53 @@ public struct WorkflowCanvas: View {
                 }
                 Spacer()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var connectionModeIndicator: some View {
+        if state.isConnecting {
+            VStack {
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "link")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Connecting...")
+                            .font(.system(size: 12, weight: .medium))
+
+                        // Divider
+                        Rectangle()
+                            .fill(Color.white.opacity(0.4))
+                            .frame(width: 1, height: 14)
+
+                        // Cancel button
+                        Button(action: {
+                            state.cancelPendingConnection()
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("Cancel")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.9))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 10)
+                    .padding(.vertical, 7)
+                    .background(theme.accent.opacity(0.9))
+                    .clipShape(Capsule())
+                    .shadow(color: theme.accent.opacity(0.3), radius: 8, x: 0, y: 2)
+                    .padding(16)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .animation(.easeOut(duration: 0.15), value: state.isConnecting)
         }
     }
 
@@ -259,8 +488,12 @@ public struct WorkflowCanvas: View {
         }
 
         scrollEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            self.handleScrollWheel(event: event)
-            return event
+            // Only handle scroll events over the canvas, let others pass through
+            if self.isMouseOverCanvas {
+                self.handleScrollWheel(event: event)
+                return nil // Consume the event to prevent propagation
+            }
+            return event // Pass through for other views (like Inspector ScrollView)
         }
 
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
@@ -310,9 +543,6 @@ public struct WorkflowCanvas: View {
     }
 
     private func handleScrollWheel(event: NSEvent) {
-        // Only handle zoom if mouse is over the canvas
-        guard isMouseOverCanvas else { return }
-
         // Get mouse location for zoom-to-cursor
         let mouseInWindow = event.locationInWindow
         guard let window = event.window,
@@ -601,8 +831,9 @@ public struct WorkflowCanvas: View {
                 draggedNodeId = nil
                 dragStartLocation = nil
 
-                if !NSEvent.modifierFlags.contains(.shift) {
-                    state.snapSelectedNodesToGrid()
+                // Snap to grid if enabled (shift temporarily disables)
+                if theme.snapToGrid && !NSEvent.modifierFlags.contains(.shift) {
+                    state.snapSelectedNodesToGrid(gridSize: theme.gridSnapSize)
                 }
             }
     }
@@ -809,10 +1040,12 @@ struct CanvasBackground: View {
         startY: CGFloat,
         gridSize: CGFloat
     ) {
-        let minorDotRadius: CGFloat = 1.0
-        let majorDotRadius: CGFloat = 1.5
+        let baseDotSize = theme.style.gridDotSize
+        let minorDotRadius: CGFloat = baseDotSize * 0.67
+        let majorDotRadius: CGFloat = baseDotSize
         let minorDotColor = theme.gridDot.opacity(0.45)
         let majorDotColor = theme.gridDot.opacity(0.5)
+        let dotStyle = theme.style.gridDotStyle
 
         var row = 0
         var y = startY
@@ -824,17 +1057,41 @@ struct CanvasBackground: View {
                 let dotRadius = isMajor ? majorDotRadius : minorDotRadius
                 let dotColor = isMajor ? majorDotColor : minorDotColor
 
-                let dotRect = CGRect(
-                    x: x - dotRadius,
-                    y: y - dotRadius,
-                    width: dotRadius * 2,
-                    height: dotRadius * 2
-                )
+                let dotPath: Path
+                switch dotStyle {
+                case .circle:
+                    let dotRect = CGRect(
+                        x: x - dotRadius,
+                        y: y - dotRadius,
+                        width: dotRadius * 2,
+                        height: dotRadius * 2
+                    )
+                    dotPath = Path(ellipseIn: dotRect)
 
-                context.fill(
-                    Path(ellipseIn: dotRect),
-                    with: .color(dotColor)
-                )
+                case .plus:
+                    // Plus/crosshair style for technical theme
+                    var path = Path()
+                    let armLength = dotRadius * 1.2
+                    // Horizontal arm
+                    path.move(to: CGPoint(x: x - armLength, y: y))
+                    path.addLine(to: CGPoint(x: x + armLength, y: y))
+                    // Vertical arm
+                    path.move(to: CGPoint(x: x, y: y - armLength))
+                    path.addLine(to: CGPoint(x: x, y: y + armLength))
+                    dotPath = path.strokedPath(StrokeStyle(lineWidth: 0.5, lineCap: .round))
+
+                case .cross:
+                    // X-shaped cross
+                    var path = Path()
+                    let armLength = dotRadius * 1.0
+                    path.move(to: CGPoint(x: x - armLength, y: y - armLength))
+                    path.addLine(to: CGPoint(x: x + armLength, y: y + armLength))
+                    path.move(to: CGPoint(x: x + armLength, y: y - armLength))
+                    path.addLine(to: CGPoint(x: x - armLength, y: y + armLength))
+                    dotPath = path.strokedPath(StrokeStyle(lineWidth: 0.5, lineCap: .round))
+                }
+
+                context.fill(dotPath, with: .color(dotColor))
 
                 x += gridSize
                 col += 1
@@ -863,7 +1120,12 @@ struct CanvasKeyboardModifier: ViewModifier {
                 return .handled
             }
             .onKeyPress(.escape) {
-                state.clearSelection()
+                // Cancel connection mode if active, otherwise clear selection
+                if state.isConnecting {
+                    state.cancelPendingConnection()
+                } else {
+                    state.clearSelection()
+                }
                 return .handled
             }
             .onKeyPress(.tab) {

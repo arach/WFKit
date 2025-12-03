@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - App Theme
+// MARK: - Appearance (Light/Dark)
 
 public enum WFAppearance: String, CaseIterable, Identifiable, Sendable {
     case dark
@@ -27,6 +27,195 @@ public enum WFAppearance: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Style Presets
+
+public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
+    case standard
+    case technical
+    case soft
+    case neon
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .standard: return "Standard"
+        case .technical: return "Technical"
+        case .soft: return "Soft"
+        case .neon: return "Neon"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .standard: return "Balanced, rounded corners"
+        case .technical: return "Sharp edges, monospace"
+        case .soft: return "Extra rounded, warm tones"
+        case .neon: return "Cyberpunk, glowing accents"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .standard: return "square.on.square"
+        case .technical: return "terminal"
+        case .soft: return "cloud"
+        case .neon: return "bolt.fill"
+        }
+    }
+
+    // Style-specific properties
+    public var nodeRadius: CGFloat {
+        switch self {
+        case .standard: return 10
+        case .technical: return 2
+        case .soft: return 16
+        case .neon: return 4
+        }
+    }
+
+    public var panelRadius: CGFloat {
+        switch self {
+        case .standard: return 8
+        case .technical: return 0
+        case .soft: return 12
+        case .neon: return 2
+        }
+    }
+
+    public var inputRadius: CGFloat {
+        switch self {
+        case .standard: return 6
+        case .technical: return 2
+        case .soft: return 10
+        case .neon: return 2
+        }
+    }
+
+    public var fontFamily: String? {
+        switch self {
+        case .standard: return nil
+        case .technical: return "SF Mono"
+        case .soft: return nil
+        case .neon: return "SF Mono"
+        }
+    }
+
+    public var useMonospace: Bool {
+        switch self {
+        case .standard, .soft: return false
+        case .technical, .neon: return true
+        }
+    }
+
+    // Style-specific font sizes
+    public var nodeTitleSize: CGFloat {
+        switch self {
+        case .standard: return 13
+        case .technical: return 11      // Compact
+        case .soft: return 14           // Comfortable
+        case .neon: return 12           // Slightly smaller monospace
+        }
+    }
+
+    public var nodeSubtitleSize: CGFloat {
+        switch self {
+        case .standard: return 11
+        case .technical: return 10      // Compact
+        case .soft: return 12           // Comfortable
+        case .neon: return 10
+        }
+    }
+
+    public var bodySize: CGFloat {
+        switch self {
+        case .standard: return 13
+        case .technical: return 12
+        case .soft: return 14
+        case .neon: return 12
+        }
+    }
+
+    public var accentHex: String {
+        switch self {
+        case .standard: return "0A84FF"  // Blue
+        case .technical: return "00FF88" // Matrix green
+        case .soft: return "FF9F0A"      // Warm orange
+        case .neon: return "FFE500"      // Electric yellow
+        }
+    }
+
+    public var accentGlowHex: String {
+        switch self {
+        case .standard: return "0084FF"
+        case .technical: return "00FF88"
+        case .soft: return "FFBF4A"
+        case .neon: return "FFFF44"      // Bright yellow glow
+        }
+    }
+
+    // Style-specific canvas colors (dark mode)
+    public var canvasBackgroundDarkHex: String {
+        switch self {
+        case .standard: return "0D0D0D"   // Dark grey
+        case .technical: return "000000"  // Pure black
+        case .soft: return "0F0A0A"       // Very dark warm
+        case .neon: return "050505"       // Near black (dark background for contrast)
+        }
+    }
+
+    public var canvasBackgroundLightHex: String {
+        switch self {
+        case .standard: return "F5F5F5"   // Light gray
+        case .technical: return "FAFAFA"  // Near white
+        case .soft: return "FBF8F5"       // Warm white
+        case .neon: return "FFFCF0"       // Light yellow tint
+        }
+    }
+
+    public var gridDotDarkHex: String {
+        switch self {
+        case .standard: return "2A2A2A"   // Gray dots
+        case .technical: return "505050"  // Light grey dots on black
+        case .soft: return "3A2A2A"       // Warm-tinted dots
+        case .neon: return "3A3000"       // Yellow/amber dots
+        }
+    }
+
+    public var gridDotLightHex: String {
+        switch self {
+        case .standard: return "D5D5D5"   // Gray dots
+        case .technical: return "C0C0C0"  // Medium gray dots
+        case .soft: return "E5D5D0"       // Warm-tinted dots
+        case .neon: return "E5D080"       // Yellow/gold dots
+        }
+    }
+
+    public var gridDotSize: CGFloat {
+        switch self {
+        case .standard: return 1.5        // Normal dots
+        case .technical: return 1.0       // Small precise dots
+        case .soft: return 2.0            // Larger softer dots
+        case .neon: return 1.5            // Normal with glow
+        }
+    }
+
+    public enum GridDotStyle {
+        case circle
+        case cross
+        case plus
+    }
+
+    public var gridDotStyle: GridDotStyle {
+        switch self {
+        case .standard: return .circle
+        case .technical: return .plus     // Technical crosshairs
+        case .soft: return .circle
+        case .neon: return .circle
+        }
+    }
+}
+
 // MARK: - Theme Manager
 
 @Observable
@@ -37,12 +226,52 @@ public final class WFThemeManager {
         }
     }
 
+    public var style: WFStyle {
+        didSet {
+            UserDefaults.standard.set(style.rawValue, forKey: "wfkitStyle")
+        }
+    }
+
+    // MARK: - Behavior Settings
+
+    /// Enable snap-to-grid when dragging nodes
+    public var snapToGrid: Bool = true
+
+    /// Grid snap size in points
+    public var gridSnapSize: CGFloat = 20
+
+    // MARK: - Visual Settings
+
+    /// Show glow/shadow effects on nodes
+    public var showNodeGlow: Bool = true
+
+    /// Show borders on nodes
+    public var showNodeBorder: Bool = true
+
+    /// Node border width
+    public var nodeBorderWidth: CGFloat = 1.0
+
+    /// Show flow animation on connections
+    public var showConnectionFlow: Bool = true
+
+    /// Connection line width
+    public var connectionLineWidth: CGFloat = 2.0
+
     public init() {
+        // Load appearance
         if let saved = UserDefaults.standard.string(forKey: "wfkitAppearance"),
            let appearance = WFAppearance(rawValue: saved) {
             self.appearance = appearance
         } else {
             self.appearance = .dark
+        }
+
+        // Load style
+        if let saved = UserDefaults.standard.string(forKey: "wfkitStyle"),
+           let style = WFStyle(rawValue: saved) {
+            self.style = style
+        } else {
+            self.style = .standard
         }
     }
 
@@ -57,14 +286,14 @@ public final class WFThemeManager {
         }
     }
 
-    // MARK: - Canvas Colors
+    // MARK: - Canvas Colors (style-dependent)
 
     public var canvasBackground: Color {
-        isDark ? Color(hex: "0A0A0A") : Color(hex: "F5F5F5")
+        isDark ? Color(hex: style.canvasBackgroundDarkHex) : Color(hex: style.canvasBackgroundLightHex)
     }
 
     public var gridDot: Color {
-        isDark ? Color(hex: "2A2A2A") : Color(hex: "D5D5D5")
+        isDark ? Color(hex: style.gridDotDarkHex) : Color(hex: style.gridDotLightHex)
     }
 
     // MARK: - Node Colors
@@ -135,14 +364,14 @@ public final class WFThemeManager {
         isDark ? Color(hex: "5A5A5A") : Color(hex: "A0A0A0")
     }
 
-    // MARK: - Accent Colors
+    // MARK: - Accent Colors (style-dependent)
 
     public var accent: Color {
-        Color(hex: "0070F3") // Vercel blue
+        Color(hex: style.accentHex)
     }
 
     public var accentGlow: Color {
-        Color(hex: "0084FF")
+        Color(hex: style.accentGlowHex)
     }
 
     // MARK: - Semantic Colors
@@ -160,6 +389,49 @@ public final class WFThemeManager {
 
     public var connectionActive: Color { accent }
     public var connectionHover: Color { accentGlow }
+
+    // MARK: - Corner Radii (style-dependent)
+
+    public var nodeRadius: CGFloat { style.nodeRadius }
+    public var panelRadius: CGFloat { style.panelRadius }
+    public var inputRadius: CGFloat { style.inputRadius }
+    public var buttonRadius: CGFloat { style.inputRadius }
+
+    // MARK: - Typography (style-dependent)
+
+    public var fontFamily: String? { style.fontFamily }
+
+    public var nodeTitle: Font {
+        if style.useMonospace {
+            return .system(size: style.nodeTitleSize, weight: .semibold, design: .monospaced)
+        }
+        return .system(size: style.nodeTitleSize, weight: .semibold)
+    }
+
+    public var nodeSubtitle: Font {
+        if style.useMonospace {
+            return .system(size: style.nodeSubtitleSize, design: .monospaced)
+        }
+        return .system(size: style.nodeSubtitleSize)
+    }
+
+    public var bodyFont: Font {
+        if style.useMonospace {
+            return .system(size: style.bodySize, design: .monospaced)
+        }
+        return .system(size: style.bodySize)
+    }
+
+    public var monoFont: Font {
+        .system(size: style.nodeSubtitleSize, design: .monospaced)
+    }
+
+    public var labelFont: Font {
+        if style.useMonospace {
+            return .system(size: style.nodeSubtitleSize, weight: .medium, design: .monospaced)
+        }
+        return .system(size: style.nodeSubtitleSize, weight: .medium)
+    }
 }
 
 // MARK: - Environment Key

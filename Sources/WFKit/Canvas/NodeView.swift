@@ -42,7 +42,6 @@ public struct NodeView: View {
         self._editedNode = State(initialValue: node)
     }
 
-    private let cornerRadius: CGFloat = 6
     private let portSize: CGFloat = 10
 
     public var body: some View {
@@ -137,25 +136,33 @@ public struct NodeView: View {
 
     @ViewBuilder
     private var nodeBackground: some View {
-        RoundedRectangle(cornerRadius: cornerRadius)
+        RoundedRectangle(cornerRadius: theme.nodeRadius)
             .fill(theme.nodeBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(
-                        isSelected
-                            ? node.effectiveColor
-                            : (isHovered ? theme.nodeBorderHover : theme.nodeBorder),
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
+                Group {
+                    if theme.showNodeBorder {
+                        RoundedRectangle(cornerRadius: theme.nodeRadius)
+                            .strokeBorder(
+                                isSelected
+                                    ? node.effectiveColor
+                                    : (isHovered ? theme.nodeBorderHover : theme.nodeBorder),
+                                lineWidth: isSelected ? theme.nodeBorderWidth + 0.5 : theme.nodeBorderWidth
+                            )
+                    }
+                }
             )
             .shadow(
-                color: isSelected ? node.effectiveColor.opacity(0.25) : (theme.isDark ? Color.black.opacity(0.3) : Color.black.opacity(0.15)),
+                color: theme.showNodeGlow
+                    ? (isSelected ? node.effectiveColor.opacity(0.25) : (theme.isDark ? Color.black.opacity(0.3) : Color.black.opacity(0.15)))
+                    : Color.clear,
                 radius: isSelected ? 8 : 4,
                 x: 0,
                 y: isSelected ? 4 : 2
             )
             .shadow(
-                color: theme.isDark ? Color.black.opacity(0.2) : Color.black.opacity(0.1),
+                color: theme.showNodeGlow
+                    ? (theme.isDark ? Color.black.opacity(0.2) : Color.black.opacity(0.1))
+                    : Color.clear,
                 radius: 2,
                 x: 0,
                 y: 1
@@ -172,10 +179,10 @@ public struct NodeView: View {
                 .foregroundColor(theme.isDark ? Color(hex: "0D0D0D") : Color(hex: "1A1A1A"))
                 .frame(width: 20, height: 20)
                 .background(node.effectiveColor)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
+                .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
 
             Text(node.title)
-                .font(.system(size: 12, weight: .medium))
+                .font(theme.nodeTitle)
                 .foregroundColor(theme.textPrimary)
                 .lineLimit(1)
 
@@ -188,7 +195,7 @@ public struct NodeView: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(theme.sectionBackground.opacity(0.8))
-                .clipShape(RoundedRectangle(cornerRadius: 2))
+                .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -204,10 +211,10 @@ public struct NodeView: View {
         )
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: cornerRadius,
+                topLeadingRadius: theme.nodeRadius,
                 bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0,
-                topTrailingRadius: cornerRadius
+                topTrailingRadius: theme.nodeRadius
             )
         )
         .overlay(
@@ -224,7 +231,7 @@ public struct NodeView: View {
     private var nodeBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(nodeSummary)
-                .font(.system(size: 10))
+                .font(theme.nodeSubtitle)
                 .foregroundColor(theme.textSecondary)
                 .lineLimit(2)
                 .padding(.horizontal, 12)
@@ -275,6 +282,20 @@ public struct NodeView: View {
                 return actionType
             }
             return "Perform action"
+
+        case .notification:
+            var parts: [String] = []
+            if let channel = node.configuration.notificationChannel {
+                parts.append(channel.rawValue)
+            }
+            if let title = node.configuration.notificationTitle, !title.isEmpty {
+                let preview = title.prefix(20)
+                parts.append("\"\(preview)\(title.count > 20 ? "…" : "")\"")
+            }
+            if parts.isEmpty {
+                return "Send notification"
+            }
+            return parts.joined(separator: " · ")
 
         case .output:
             return "Output result"
@@ -460,6 +481,16 @@ struct PortView: View {
         .onHover { hovering in
             isHovered = hovering
             onHover?(hovering ? port.id : nil)
+        }
+        .onTapGesture {
+            // Handle click to complete connection when in connection mode
+            if isConnectionDragActive && isValidDropTarget {
+                canvasState.completeConnection(
+                    to: nodeId,
+                    targetPortId: port.id,
+                    isInput: port.isInput
+                )
+            }
         }
         .onAppear {
             // Start pulse animation

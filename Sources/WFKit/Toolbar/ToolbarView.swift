@@ -23,56 +23,44 @@ public struct ToolbarView: View {
                 NodePaletteView(state: state, isPresented: $showNodePalette)
             }
 
-            Divider()
-                .frame(height: 20)
-                .background(theme.divider.opacity(0.3))
-
-            HStack(spacing: 4) {
-                Button(action: { state.zoomOut() }) {
-                    Image(systemName: "minus.magnifyingglass")
-                        .foregroundColor(theme.textSecondary)
-                }
-                .buttonStyle(.borderless)
-
-                Text("\(Int(state.scale * 100))%")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-                    .frame(width: 45)
-
-                Button(action: { state.zoomIn() }) {
-                    Image(systemName: "plus.magnifyingglass")
-                        .foregroundColor(theme.textSecondary)
-                }
-                .buttonStyle(.borderless)
-
-                Button(action: { state.resetView() }) {
-                    Image(systemName: "1.magnifyingglass")
-                        .foregroundColor(theme.textSecondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Reset to 100%")
-            }
-
-            Divider()
-                .frame(height: 20)
-                .background(theme.divider.opacity(0.3))
-
-            if state.hasSelection {
-                HStack(spacing: 8) {
-                    Text("\(state.selectedNodeIds.count) selected")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(theme.textSecondary)
-
-                    Button(action: { state.removeSelectedNodes() }) {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundColor(.red)
-                }
-            }
-
             Spacer()
 
+            // Style picker
+            Menu {
+                ForEach(WFStyle.allCases) { style in
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            theme.style = style
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: style.icon)
+                            VStack(alignment: .leading) {
+                                Text(style.displayName)
+                                Text(style.description)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if theme.style == style {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: theme.style.icon)
+                        .font(.system(size: 13))
+                    Text(theme.style.displayName)
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(theme.textSecondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Change Style")
+
+            // Appearance picker
             Menu {
                 ForEach(WFAppearance.allCases) { appearance in
                     Button(action: {

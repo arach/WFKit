@@ -33,6 +33,7 @@ public enum NodeType: String, Codable, CaseIterable, Identifiable, Sendable {
     case transform = "Transform"
     case condition = "Condition"
     case action = "Action"
+    case notification = "Notification"
     case output = "Output"
 
     public var id: String { rawValue }
@@ -44,6 +45,7 @@ public enum NodeType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .transform: return "wand.and.rays"
         case .condition: return "arrow.triangle.branch"
         case .action: return "play.fill"
+        case .notification: return "bell.fill"
         case .output: return "square.and.arrow.up"
         }
     }
@@ -55,6 +57,7 @@ public enum NodeType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .transform: return Color(hex: "#0A84FF") // Tactical blue
         case .condition: return Color(hex: "#FFD60A") // Tactical yellow
         case .action: return Color(hex: "#30D158") // Tactical green
+        case .notification: return Color(hex: "#64D2FF") // Tactical cyan
         case .output: return Color(hex: "#FF375F") // Tactical pink/red
         }
     }
@@ -66,6 +69,7 @@ public enum NodeType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .transform: return "Transform"
         case .condition: return "If/Else"
         case .action: return "Action"
+        case .notification: return "Notify"
         case .output: return "Output"
         }
     }
@@ -173,6 +177,24 @@ public struct WorkflowNode: Identifiable, Codable, Hashable, Sendable {
 
 // MARK: - Node Configuration
 
+// MARK: - Notification Channel
+
+public enum NotificationChannel: String, Codable, CaseIterable, Identifiable, Sendable {
+    case push = "Push"
+    case email = "Email"
+    case sms = "SMS"
+
+    public var id: String { rawValue }
+
+    public var icon: String {
+        switch self {
+        case .push: return "bell.badge"
+        case .email: return "envelope"
+        case .sms: return "message"
+        }
+    }
+}
+
 public struct NodeConfiguration: Codable, Hashable, Sendable {
     // LLM settings
     public var prompt: String?
@@ -192,6 +214,12 @@ public struct NodeConfiguration: Codable, Hashable, Sendable {
     public var actionType: String?
     public var actionConfig: [String: String]?
 
+    // Notification settings
+    public var notificationChannel: NotificationChannel?
+    public var notificationTitle: String?
+    public var notificationBody: String?
+    public var notificationRecipient: String?  // email/phone for email/sms
+
     // Generic key-value for extensibility
     public var customFields: [String: String]?
 
@@ -206,6 +234,10 @@ public struct NodeConfiguration: Codable, Hashable, Sendable {
         condition: String? = nil,
         actionType: String? = nil,
         actionConfig: [String: String]? = nil,
+        notificationChannel: NotificationChannel? = nil,
+        notificationTitle: String? = nil,
+        notificationBody: String? = nil,
+        notificationRecipient: String? = nil,
         customFields: [String: String]? = nil
     ) {
         self.prompt = prompt
@@ -218,6 +250,10 @@ public struct NodeConfiguration: Codable, Hashable, Sendable {
         self.condition = condition
         self.actionType = actionType
         self.actionConfig = actionConfig
+        self.notificationChannel = notificationChannel
+        self.notificationTitle = notificationTitle
+        self.notificationBody = notificationBody
+        self.notificationRecipient = notificationRecipient
         self.customFields = customFields
     }
 }

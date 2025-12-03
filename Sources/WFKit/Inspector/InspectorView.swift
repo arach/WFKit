@@ -5,7 +5,7 @@ import SwiftUI
 public struct InspectorView: View {
     @Bindable var state: CanvasState
     @Binding var isVisible: Bool
-    @State private var expandedSections: Set<String> = ["properties", "appearance", "configuration"]
+    @State private var expandedSections: Set<String> = ["node", "config"]
     @Environment(\.wfTheme) private var theme
 
     public init(state: CanvasState, isVisible: Binding<Bool>) {
@@ -24,40 +24,24 @@ public struct InspectorView: View {
             if let node = state.singleSelectedNode {
                 ScrollView {
                     VStack(spacing: 0) {
+                        // NODE: Identity, style, position
                         InspectorSection(
-                            title: "APPEARANCE",
-                            icon: "paintpalette.fill",
-                            id: "appearance",
+                            title: "NODE",
+                            icon: "square.on.square",
+                            id: "node",
                             expandedSections: $expandedSections
                         ) {
-                            appearanceSection(node)
+                            consolidatedNodeSection(node)
                         }
 
+                        // CONFIG: Settings + Ports
                         InspectorSection(
-                            title: "PROPERTIES",
-                            icon: "slider.horizontal.3",
-                            id: "properties",
-                            expandedSections: $expandedSections
-                        ) {
-                            nodePropertiesSection(node)
-                        }
-
-                        InspectorSection(
-                            title: "CONFIGURATION",
+                            title: "CONFIG",
                             icon: "gearshape.fill",
-                            id: "configuration",
+                            id: "config",
                             expandedSections: $expandedSections
                         ) {
-                            nodeConfigurationSection(node)
-                        }
-
-                        InspectorSection(
-                            title: "CONNECTIONS",
-                            icon: "arrow.triangle.branch",
-                            id: "connections",
-                            expandedSections: $expandedSections
-                        ) {
-                            portsSection(node)
+                            consolidatedConfigSection(node)
                         }
                     }
                     .padding(.vertical, 12)
@@ -101,119 +85,66 @@ public struct InspectorView: View {
         .background(theme.sectionBackground)
     }
 
-    // MARK: - Appearance Section
+    // MARK: - Consolidated Node Section (Identity + Style + Position)
 
     @ViewBuilder
-    private func appearanceSection(_ node: WorkflowNode) -> some View {
+    private func consolidatedNodeSection(_ node: WorkflowNode) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Node Color")
-                    .font(.system(size: 9, weight: .semibold, design: .default))
-                    .tracking(0.5)
-                    .foregroundColor(theme.textSecondary)
-                    .textCase(.uppercase)
-
-                HStack(spacing: 8) {
-                    Button(action: {
-                        var updated = node
-                        updated.customColor = nil
-                        state.updateNode(updated)
-                    }) {
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(node.type.color)
-                                .frame(width: 20, height: 20)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .strokeBorder(
-                                            node.customColor == nil ? Color.white : theme.border,
-                                            lineWidth: node.customColor == nil ? 2 : 1
-                                        )
-                                )
-
-                            Text("Default")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(theme.textSecondary)
-
-                            Spacer()
-                        }
-                        .padding(8)
-                        .background(node.customColor == nil ? theme.sectionBackground : theme.panelBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 8) {
-                    ForEach(WFColorPresets.all, id: \.self) { hexColor in
-                        Button(action: {
-                            var updated = node
-                            updated.customColor = hexColor
-                            state.updateNode(updated)
-                        }) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(hex: hexColor))
-                                .frame(height: 28)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .strokeBorder(
-                                            node.customColor == hexColor ? Color.white : theme.border,
-                                            lineWidth: node.customColor == hexColor ? 2 : 1
-                                        )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Node Properties Section
-
-    @ViewBuilder
-    private func nodePropertiesSection(_ node: WorkflowNode) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            InspectorField(label: "TITLE") {
-                TextField("Title", text: Binding(
-                    get: { node.title },
-                    set: { newValue in
-                        var updated = node
-                        updated.title = newValue
-                        state.updateNode(updated)
-                    }
-                ))
-                .textFieldStyle(InspectorTextFieldStyle())
-                .font(.system(size: 12, design: .default))
-            }
-
-            InspectorField(label: "TYPE") {
-                HStack(spacing: 8) {
+            // Row 1: Type badge + Color picker
+            HStack(spacing: 10) {
+                // Type badge
+                HStack(spacing: 6) {
                     Image(systemName: node.type.icon)
-                        .font(.system(size: 11))
-                        .foregroundColor(node.effectiveColor)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 22, height: 22)
+                        .background(node.effectiveColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+
                     Text(node.type.rawValue)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(theme.textSecondary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.textPrimary)
                 }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.panelBackground)
-                .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
-                .overlay(
-                    RoundedRectangle(cornerRadius: WFDesign.radiusSM)
-                        .strokeBorder(theme.border, lineWidth: 1)
+
+                Spacer()
+
+                // Color picker
+                ColorPickerButton(
+                    selectedColor: node.effectiveColor,
+                    defaultColor: node.type.color,
+                    customColor: node.customColor,
+                    onColorChange: { newColor in
+                        var updated = node
+                        updated.customColor = newColor
+                        state.updateNode(updated)
+                    }
                 )
             }
 
-            HStack(spacing: 8) {
-                InspectorField(label: "X") {
+            // Row 2: Title
+            TextField("Node name", text: Binding(
+                get: { node.title },
+                set: { newValue in
+                    var updated = node
+                    updated.title = newValue
+                    state.updateNode(updated)
+                }
+            ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundColor(theme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(theme.inputBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            )
+
+            // Row 3: Position (X, Y inline)
+            HStack(spacing: 12) {
+                InspectorInlineField(label: "X", labelWidth: 14) {
                     TextField("X", value: Binding(
                         get: { node.position.x },
                         set: { newValue in
@@ -223,11 +154,11 @@ public struct InspectorView: View {
                             state.updateNode(updated)
                         }
                     ), format: .number)
-                    .textFieldStyle(InspectorTextFieldStyle())
+                    .textFieldStyle(InspectorCompactTextFieldStyle())
                     .font(.system(size: 11, design: .monospaced))
                 }
 
-                InspectorField(label: "Y") {
+                InspectorInlineField(label: "Y", labelWidth: 14) {
                     TextField("Y", value: Binding(
                         get: { node.position.y },
                         set: { newValue in
@@ -237,9 +168,29 @@ public struct InspectorView: View {
                             state.updateNode(updated)
                         }
                     ), format: .number)
-                    .textFieldStyle(InspectorTextFieldStyle())
+                    .textFieldStyle(InspectorCompactTextFieldStyle())
                     .font(.system(size: 11, design: .monospaced))
                 }
+            }
+        }
+    }
+
+    // MARK: - Consolidated Config Section (Settings + Ports)
+
+    @ViewBuilder
+    private func consolidatedConfigSection(_ node: WorkflowNode) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Settings
+            nodeConfigurationSection(node)
+
+            // Divider between settings and ports
+            if !node.inputs.isEmpty || !node.outputs.isEmpty {
+                Rectangle()
+                    .fill(theme.border.opacity(0.5))
+                    .frame(height: 1)
+
+                // Ports
+                portsSection(node)
             }
         }
     }
@@ -258,6 +209,8 @@ public struct InspectorView: View {
                 transformConfigSection(node)
             case .action:
                 actionConfigSection(node)
+            case .notification:
+                notificationConfigSection(node)
             case .trigger:
                 triggerConfigSection(node)
             case .output:
@@ -526,6 +479,95 @@ public struct InspectorView: View {
         }
     }
 
+    // MARK: - Notification Config
+
+    @ViewBuilder
+    private func notificationConfigSection(_ node: WorkflowNode) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            InspectorField(label: "Channel") {
+                HStack(spacing: 8) {
+                    ForEach(NotificationChannel.allCases) { channel in
+                        Button(action: {
+                            var updated = node
+                            updated.configuration.notificationChannel = channel
+                            state.updateNode(updated)
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: channel.icon)
+                                    .font(.system(size: 14))
+                                Text(channel.rawValue)
+                                    .font(.system(size: 9, weight: .medium))
+                            }
+                            .foregroundColor(node.configuration.notificationChannel == channel ? .white : theme.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(node.configuration.notificationChannel == channel ? node.effectiveColor : theme.inputBackground)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(node.configuration.notificationChannel == channel ? node.effectiveColor : theme.border, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            InspectorField(label: "Title") {
+                TextField("Notification title", text: Binding(
+                    get: { node.configuration.notificationTitle ?? "" },
+                    set: { newValue in
+                        var updated = node
+                        updated.configuration.notificationTitle = newValue.isEmpty ? nil : newValue
+                        state.updateNode(updated)
+                    }
+                ))
+                .textFieldStyle(InspectorTextFieldStyle())
+            }
+
+            InspectorField(label: "Body") {
+                InspectorTextEditor(
+                    text: Binding(
+                        get: { node.configuration.notificationBody ?? "" },
+                        set: { newValue in
+                            var updated = node
+                            updated.configuration.notificationBody = newValue.isEmpty ? nil : newValue
+                            state.updateNode(updated)
+                        }
+                    ),
+                    placeholder: "Notification message...",
+                    height: 80
+                )
+            }
+
+            // Show recipient field for email/sms
+            if let channel = node.configuration.notificationChannel, channel != .push {
+                InspectorField(label: channel == .email ? "Email" : "Phone") {
+                    TextField(channel == .email ? "email@example.com" : "+1234567890", text: Binding(
+                        get: { node.configuration.notificationRecipient ?? "" },
+                        set: { newValue in
+                            var updated = node
+                            updated.configuration.notificationRecipient = newValue.isEmpty ? nil : newValue
+                            state.updateNode(updated)
+                        }
+                    ))
+                    .textFieldStyle(InspectorTextFieldStyle())
+                    .font(.system(size: 11, design: .monospaced))
+                }
+            }
+
+            Text("Variables: {{input}}, {{output}}")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(theme.textTertiary)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.panelBackground.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+        }
+    }
+
     // MARK: - Trigger Config
 
     @ViewBuilder
@@ -565,7 +607,7 @@ public struct InspectorView: View {
                     .textCase(.uppercase)
 
                 ForEach(node.inputs) { port in
-                    portRow(port, connections: connectionsForPort(nodeId: node.id, portId: port.id))
+                    portRow(port, nodeId: node.id, isInput: true, connections: connectionsForPort(nodeId: node.id, portId: port.id))
                 }
             }
 
@@ -578,26 +620,57 @@ public struct InspectorView: View {
                     .padding(.top, 4)
 
                 ForEach(node.outputs) { port in
-                    portRow(port, connections: connectionsForPort(nodeId: node.id, portId: port.id))
+                    portRow(port, nodeId: node.id, isInput: false, connections: connectionsForPort(nodeId: node.id, portId: port.id))
                 }
+            }
+
+            // Connection mode hint
+            if state.isConnecting {
+                HStack(spacing: 6) {
+                    Image(systemName: "link")
+                        .font(.system(size: 10))
+                    Text("Click a port on the canvas to connect")
+                        .font(.system(size: 9))
+                    Spacer()
+                    Button(action: { state.cancelPendingConnection() }) {
+                        Text("Cancel")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundColor(theme.accent)
+                .padding(8)
+                .background(theme.accent.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(.top, 4)
             }
         }
     }
 
     @ViewBuilder
-    private func portRow(_ port: Port, connections: [WorkflowConnection]) -> some View {
+    private func portRow(_ port: Port, nodeId: UUID, isInput: Bool, connections: [WorkflowConnection]) -> some View {
+        let isConnecting = state.pendingConnection?.sourceAnchor.portId == port.id
+        let isValidTarget = state.validDropPortIds.contains(port.id)
+
         HStack(spacing: 8) {
+            // Port indicator
             Circle()
-                .fill(connections.isEmpty ? theme.border : Color.blue)
+                .fill(isConnecting ? theme.accent : (connections.isEmpty ? theme.border : Color.blue))
                 .frame(width: 8, height: 8)
+                .overlay(
+                    Circle()
+                        .strokeBorder(isConnecting ? theme.accent : .clear, lineWidth: 2)
+                        .scaleEffect(1.5)
+                )
 
             Text(port.label)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(theme.textSecondary)
+                .foregroundColor(isConnecting ? theme.accent : theme.textSecondary)
 
             Spacer()
 
             if !connections.isEmpty {
+                // Show connection count badge
                 Text("\(connections.count)")
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundColor(theme.textTertiary)
@@ -605,12 +678,44 @@ public struct InspectorView: View {
                     .padding(.vertical, 2)
                     .background(theme.panelBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 2))
+            } else if isValidTarget {
+                // This port is a valid drop target
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.green)
+            } else if !state.isConnecting {
+                // Show connect button for unconnected ports
+                Button(action: {
+                    state.startConnectionFromPort(nodeId: nodeId, portId: port.id, isInput: isInput)
+                }) {
+                    Image(systemName: "link.badge.plus")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Start connection from this port")
             }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(theme.panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+        .background(
+            RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                .fill(isConnecting ? theme.accent.opacity(0.1) : (isValidTarget ? Color.green.opacity(0.1) : theme.panelBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                .strokeBorder(isConnecting ? theme.accent : (isValidTarget ? Color.green : Color.clear), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isValidTarget {
+                // Complete connection to this port
+                state.completeConnection(to: nodeId, targetPortId: port.id, isInput: isInput)
+            } else if connections.isEmpty && !state.isConnecting {
+                // Start connection from this port
+                state.startConnectionFromPort(nodeId: nodeId, portId: port.id, isInput: isInput)
+            }
+        }
     }
 
     private func connectionsForPort(nodeId: UUID, portId: UUID) -> [WorkflowConnection] {
@@ -740,7 +845,7 @@ struct InspectorSection<Content: View>: View {
     }
 }
 
-// MARK: - Inspector Field
+// MARK: - Inspector Field (Stacked)
 
 struct InspectorField<Content: View>: View {
     let label: String
@@ -748,11 +853,37 @@ struct InspectorField<Content: View>: View {
     @Environment(\.wfTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .medium, design: .default))
+                .tracking(0.3)
+                .foregroundColor(theme.textTertiary)
+
+            content()
+        }
+    }
+}
+
+// MARK: - Inspector Inline Field
+
+struct InspectorInlineField<Content: View>: View {
+    let label: String
+    let labelWidth: CGFloat
+    @ViewBuilder let content: () -> Content
+    @Environment(\.wfTheme) private var theme
+
+    init(label: String, labelWidth: CGFloat = 50, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self.labelWidth = labelWidth
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 10, weight: .medium, design: .default))
-                .tracking(0.3)
                 .foregroundColor(theme.textSecondary)
+                .frame(width: labelWidth, alignment: .leading)
 
             content()
         }
@@ -776,6 +907,28 @@ struct InspectorTextFieldStyle: TextFieldStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - Inspector Compact Text Field Style
+
+struct InspectorCompactTextFieldStyle: TextFieldStyle {
+    @Environment(\.wfTheme) private var theme
+
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .foregroundColor(theme.textPrimary)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.inputBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(theme.border, lineWidth: 1)
             )
     }
@@ -885,6 +1038,101 @@ struct InspectorPicker: View {
             }
             .padding(6)
             .frame(minWidth: 150)
+            .background(theme.panelBackground)
+        }
+    }
+}
+
+// MARK: - Color Picker Button
+
+struct ColorPickerButton: View {
+    let selectedColor: Color
+    let defaultColor: Color
+    let customColor: String?
+    let onColorChange: (String?) -> Void
+    @State private var isOpen: Bool = false
+    @Environment(\.wfTheme) private var theme
+
+    var body: some View {
+        Button(action: { isOpen.toggle() }) {
+            Circle()
+                .fill(selectedColor)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Circle()
+                        .strokeBorder(isOpen ? theme.accent : theme.textPrimary.opacity(0.2), lineWidth: isOpen ? 2 : 1)
+                )
+                .shadow(color: selectedColor.opacity(0.5), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Default color option
+                Button(action: {
+                    onColorChange(nil)
+                    isOpen = false
+                }) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(defaultColor)
+                            .frame(width: 16, height: 16)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(
+                                        customColor == nil ? Color.white : theme.border,
+                                        lineWidth: customColor == nil ? 2 : 1
+                                    )
+                            )
+                        Text("Default")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(customColor == nil ? theme.accent : theme.textPrimary)
+                        Spacer()
+                        if customColor == nil {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(theme.accent)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(customColor == nil ? theme.accent.opacity(0.1) : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                // Color grid
+                LazyVGrid(columns: [
+                    GridItem(.fixed(24)),
+                    GridItem(.fixed(24)),
+                    GridItem(.fixed(24)),
+                    GridItem(.fixed(24)),
+                    GridItem(.fixed(24))
+                ], spacing: 6) {
+                    ForEach(WFColorPresets.all, id: \.self) { hexColor in
+                        Button(action: {
+                            onColorChange(hexColor)
+                            isOpen = false
+                        }) {
+                            Circle()
+                                .fill(Color(hex: hexColor))
+                                .frame(width: 22, height: 22)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(
+                                            customColor == hexColor ? Color.white : Color.clear,
+                                            lineWidth: 2
+                                        )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(10)
             .background(theme.panelBackground)
         }
     }

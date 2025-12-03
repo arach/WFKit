@@ -170,6 +170,125 @@ public final class CanvasState {
         selectNode(node.id, exclusive: true)
     }
 
+    // MARK: - Convenience API (Auto-positioned)
+
+    /// Add a node without specifying position - use autoLayout() after adding all nodes
+    @discardableResult
+    public func addNode(
+        type: NodeType,
+        title: String? = nil,
+        configuration: NodeConfiguration = NodeConfiguration(),
+        position: CGPoint? = nil
+    ) -> WorkflowNode {
+        saveSnapshot()
+        let node = WorkflowNode(
+            type: type,
+            title: title,
+            position: position ?? nextAutoPosition(),
+            configuration: configuration
+        )
+        nodes.append(node)
+        return node
+    }
+
+    /// Connect two nodes using first available output → first available input
+    public func connect(_ source: WorkflowNode, to target: WorkflowNode) {
+        guard let sourcePort = source.outputs.first,
+              let targetPort = target.inputs.first else { return }
+
+        let connection = WorkflowConnection(
+            sourceNodeId: source.id,
+            sourcePortId: sourcePort.id,
+            targetNodeId: target.id,
+            targetPortId: targetPort.id
+        )
+        addConnection(connection)
+    }
+
+    /// Connect from a specific named output port to target's input
+    public func connect(_ source: WorkflowNode, port portLabel: String, to target: WorkflowNode) {
+        guard let sourcePort = source.outputs.first(where: { $0.label == portLabel }),
+              let targetPort = target.inputs.first else { return }
+
+        let connection = WorkflowConnection(
+            sourceNodeId: source.id,
+            sourcePortId: sourcePort.id,
+            targetNodeId: target.id,
+            targetPortId: targetPort.id
+        )
+        addConnection(connection)
+    }
+
+    /// Auto-layout all nodes based on graph structure (left-to-right flow)
+    public func autoLayout(spacing: CGSize = CGSize(width: 280, height: 160), origin: CGPoint = CGPoint(x: 100, y: 100)) {
+        guard !nodes.isEmpty else { return }
+
+        // Build adjacency for topological sort
+        var inDegree: [UUID: Int] = [:]
+        var outEdges: [UUID: [UUID]] = [:]
+
+        for node in nodes {
+            inDegree[node.id] = 0
+            outEdges[node.id] = []
+        }
+
+        for conn in connections {
+            inDegree[conn.targetNodeId, default: 0] += 1
+            outEdges[conn.sourceNodeId, default: []].append(conn.targetNodeId)
+        }
+
+        // Kahn's algorithm for topological levels
+        var levels: [[UUID]] = []
+        var queue = nodes.filter { inDegree[$0.id] == 0 }.map { $0.id }
+        var remaining = inDegree
+
+        while !queue.isEmpty {
+            levels.append(queue)
+            var nextQueue: [UUID] = []
+
+            for nodeId in queue {
+                for targetId in outEdges[nodeId] ?? [] {
+                    remaining[targetId, default: 0] -= 1
+                    if remaining[targetId] == 0 {
+                        nextQueue.append(targetId)
+                    }
+                }
+            }
+            queue = nextQueue
+        }
+
+        // Handle any remaining nodes (cycles or disconnected)
+        let positioned = Set(levels.flatMap { $0 })
+        let unpositioned = nodes.filter { !positioned.contains($0.id) }.map { $0.id }
+        if !unpositioned.isEmpty {
+            levels.append(unpositioned)
+        }
+
+        // Position nodes by level
+        for (col, level) in levels.enumerated() {
+            for (row, nodeId) in level.enumerated() {
+                if let index = nodes.firstIndex(where: { $0.id == nodeId }) {
+                    nodes[index].position = CGPoint(
+                        x: origin.x + CGFloat(col) * spacing.width,
+                        y: origin.y + CGFloat(row) * spacing.height
+                    )
+                }
+            }
+        }
+    }
+
+    /// Get next auto-position for incrementally added nodes
+    private func nextAutoPosition() -> CGPoint {
+        guard let lastNode = nodes.last else {
+            return CGPoint(x: 100, y: 100)
+        }
+        // Stack vertically with some offset
+        return CGPoint(
+            x: lastNode.position.x,
+            y: lastNode.position.y + lastNode.size.height + 40
+        )
+    }
+
     public func removeNode(_ id: UUID) {
         saveSnapshot()
         nodes.removeAll { $0.id == id }
@@ -378,7 +497,10 @@ public final class CanvasState {
                     targetNodeId: inputAnchor.nodeId,
                     targetPortId: inputAnchor.portId
                 )
-                connections.append(newConnection)
+                // Use withAnimation to ensure the connection appears immediately
+                withAnimation(.easeOut(duration: 0.2)) {
+                    connections.append(newConnection)
+                }
                 WFLogger.info("Created new connection: \(newConnection.id.uuidString.prefix(8))", category: .connection)
             } else {
                 WFLogger.warning("Cannot connect - keeping original", category: .connection)
@@ -401,7 +523,10 @@ public final class CanvasState {
         guard connection.sourceNodeId != connection.targetNodeId else { return }
 
         saveSnapshot()
-        connections.append(connection)
+        // Use withAnimation to ensure the connection appears immediately with a smooth entrance
+        withAnimation(.easeOut(duration: 0.2)) {
+            connections.append(connection)
+        }
     }
 
     public func removeConnection(_ id: UUID) {
@@ -415,6 +540,76 @@ public final class CanvasState {
             ($0.sourceNodeId == nodeId && $0.sourcePortId == portId) ||
             ($0.targetNodeId == nodeId && $0.targetPortId == portId)
         }
+    }
+
+    /// Start a new connection from a port (initiated from inspector or programmatically)
+    /// - Parameters:
+    ///   - nodeId: The node containing the port
+    ///   - portId: The port to start the connection from
+    ///   - isInput: Whether the port is an input port
+    public func startConnectionFromPort(nodeId: UUID, portId: UUID, isInput: Bool) {
+        guard let position = portPosition(nodeId: nodeId, portId: portId) else { return }
+
+        let anchor = ConnectionAnchor(
+            nodeId: nodeId,
+            portId: portId,
+            position: position,
+            isInput: isInput
+        )
+
+        pendingConnection = PendingConnection(from: anchor)
+        updateValidDropPorts(for: anchor)
+    }
+
+    /// Complete a pending connection to a target port
+    public func completeConnection(to targetNodeId: UUID, targetPortId: UUID, isInput: Bool) {
+        defer {
+            pendingConnection = nil
+            validDropPortIds.removeAll()
+            hoveredPortId = nil
+        }
+
+        guard let pending = pendingConnection,
+              let targetPosition = portPosition(nodeId: targetNodeId, portId: targetPortId) else {
+            return
+        }
+
+        let targetAnchor = ConnectionAnchor(
+            nodeId: targetNodeId,
+            portId: targetPortId,
+            position: targetPosition,
+            isInput: isInput
+        )
+
+        if canConnect(from: pending.sourceAnchor, to: targetAnchor) {
+            saveSnapshot()
+
+            let source = pending.sourceAnchor
+            let (outputAnchor, inputAnchor) = source.isInput ? (targetAnchor, source) : (source, targetAnchor)
+
+            let newConnection = WorkflowConnection(
+                sourceNodeId: outputAnchor.nodeId,
+                sourcePortId: outputAnchor.portId,
+                targetNodeId: inputAnchor.nodeId,
+                targetPortId: inputAnchor.portId
+            )
+            // Use withAnimation to ensure the connection appears immediately
+            withAnimation(.easeOut(duration: 0.2)) {
+                connections.append(newConnection)
+            }
+        }
+    }
+
+    /// Cancel the pending connection
+    public func cancelPendingConnection() {
+        pendingConnection = nil
+        validDropPortIds.removeAll()
+        hoveredPortId = nil
+    }
+
+    /// Check if we're in connection mode
+    public var isConnecting: Bool {
+        pendingConnection != nil
     }
 
     // MARK: - Canvas Operations
@@ -499,19 +694,21 @@ public final class CanvasState {
 
     // MARK: - Grid Snapping
 
-    private let gridSize: CGFloat = 20
+    public var gridSize: CGFloat = 20
 
-    public func snapToGrid(_ point: CGPoint) -> CGPoint {
-        CGPoint(
-            x: round(point.x / gridSize) * gridSize,
-            y: round(point.y / gridSize) * gridSize
+    public func snapToGrid(_ point: CGPoint, gridSize: CGFloat? = nil) -> CGPoint {
+        let size = gridSize ?? self.gridSize
+        return CGPoint(
+            x: round(point.x / size) * size,
+            y: round(point.y / size) * size
         )
     }
 
-    public func snapSelectedNodesToGrid() {
+    public func snapSelectedNodesToGrid(gridSize: CGFloat? = nil) {
+        let size = gridSize ?? self.gridSize
         for id in selectedNodeIds {
             if let index = nodes.firstIndex(where: { $0.id == id }) {
-                nodes[index].position = snapToGrid(nodes[index].position)
+                nodes[index].position = snapToGrid(nodes[index].position, gridSize: size)
             }
         }
     }
@@ -931,17 +1128,15 @@ public extension CanvasState {
     static func sampleState() -> CanvasState {
         let state = CanvasState()
 
-        // Create sample nodes
-        let triggerNode = WorkflowNode(
+        // Create sample nodes using convenience API (positions will be auto-laid out)
+        let trigger = state.addNode(
             type: .trigger,
-            title: "Voice Input",
-            position: CGPoint(x: 100, y: 200)
+            title: "Voice Input"
         )
 
-        let llmNode = WorkflowNode(
+        let llm = state.addNode(
             type: .llm,
             title: "Summarize",
-            position: CGPoint(x: 400, y: 150),
             configuration: NodeConfiguration(
                 prompt: "Summarize the following transcript:\n{{input}}",
                 model: "gemini-2.0-flash",
@@ -949,75 +1144,38 @@ public extension CanvasState {
             )
         )
 
-        let conditionNode = WorkflowNode(
+        let condition = state.addNode(
             type: .condition,
             title: "Has Tasks?",
-            position: CGPoint(x: 400, y: 350),
             configuration: NodeConfiguration(
                 condition: "output contains 'task'"
             )
         )
 
-        let actionNode = WorkflowNode(
+        let action = state.addNode(
             type: .action,
             title: "Create Reminder",
-            position: CGPoint(x: 700, y: 200),
             configuration: NodeConfiguration(
                 actionType: "reminder"
             )
         )
 
-        let outputNode = WorkflowNode(
+        let output = state.addNode(
             type: .output,
-            title: "Save Result",
-            position: CGPoint(x: 700, y: 400)
+            title: "Save Result"
         )
 
-        state.nodes = [triggerNode, llmNode, conditionNode, actionNode, outputNode]
-
         // Create connections
-        if let triggerOut = triggerNode.outputs.first,
-           let llmIn = llmNode.inputs.first {
-            state.connections.append(WorkflowConnection(
-                sourceNodeId: triggerNode.id,
-                sourcePortId: triggerOut.id,
-                targetNodeId: llmNode.id,
-                targetPortId: llmIn.id
-            ))
-        }
+        state.connect(trigger, to: llm)
+        state.connect(llm, to: condition)
+        state.connect(condition, port: "True", to: action)
+        state.connect(condition, port: "False", to: output)
 
-        if let llmOut = llmNode.outputs.first,
-           let condIn = conditionNode.inputs.first {
-            state.connections.append(WorkflowConnection(
-                sourceNodeId: llmNode.id,
-                sourcePortId: llmOut.id,
-                targetNodeId: conditionNode.id,
-                targetPortId: condIn.id
-            ))
-        }
-
-        // True branch to action
-        if let condTrue = conditionNode.outputs.first,
-           let actionIn = actionNode.inputs.first {
-            state.connections.append(WorkflowConnection(
-                sourceNodeId: conditionNode.id,
-                sourcePortId: condTrue.id,
-                targetNodeId: actionNode.id,
-                targetPortId: actionIn.id
-            ))
-        }
-
-        // False branch to output
-        if conditionNode.outputs.count > 1,
-           let condFalse = conditionNode.outputs.last,
-           let outputIn = outputNode.inputs.first {
-            state.connections.append(WorkflowConnection(
-                sourceNodeId: conditionNode.id,
-                sourcePortId: condFalse.id,
-                targetNodeId: outputNode.id,
-                targetPortId: outputIn.id
-            ))
-        }
+        // Apply auto-layout for a nice flow
+        state.autoLayout(
+            spacing: CGSize(width: 300, height: 140),
+            origin: CGPoint(x: 100, y: 100)
+        )
 
         return state
     }
