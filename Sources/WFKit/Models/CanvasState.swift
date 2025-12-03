@@ -283,6 +283,111 @@ public final class CanvasState {
 
     // MARK: - Connection Operations
 
+    /// The connection currently being reconnected (if any)
+    public var reconnectingConnection: WorkflowConnection? = nil
+
+    /// Start reconnecting an existing connection by dragging one of its endpoints
+    /// - Parameters:
+    ///   - connection: The connection to reconnect
+    ///   - draggingSource: If true, dragging the source endpoint. If false, dragging the target endpoint.
+    public func startReconnection(_ connection: WorkflowConnection, fromSource draggingSource: Bool) {
+        WFLogger.connection("START reconnection", details: "draggingSource=\(draggingSource), id=\(connection.id.uuidString.prefix(8))")
+
+        // Store the connection being reconnected (keep it in the array, just mark it)
+        reconnectingConnection = connection
+
+        // Get the anchor position for the fixed end (the end that's NOT being dragged)
+        let anchorNodeId: UUID
+        let anchorPortId: UUID
+        let isInput: Bool
+
+        if draggingSource {
+            // Dragging the source endpoint → target stays fixed
+            // The fixed anchor is the target (an input port)
+            anchorNodeId = connection.targetNodeId
+            anchorPortId = connection.targetPortId
+            isInput = true // Target is an input port
+            WFLogger.debug("Anchor: TARGET (input port)", category: .connection)
+        } else {
+            // Dragging the target endpoint → source stays fixed
+            // The fixed anchor is the source (an output port)
+            anchorNodeId = connection.sourceNodeId
+            anchorPortId = connection.sourcePortId
+            isInput = false // Source is an output port
+            WFLogger.debug("Anchor: SOURCE (output port)", category: .connection)
+        }
+
+        guard let anchorPosition = portPosition(nodeId: anchorNodeId, portId: anchorPortId) else {
+            WFLogger.error("Failed to get anchor position!", category: .connection)
+            reconnectingConnection = nil
+            return
+        }
+
+        WFLogger.debug("Anchor position: \(anchorPosition)", category: .connection)
+
+        // Create the pending connection from the fixed anchor
+        let anchor = ConnectionAnchor(
+            nodeId: anchorNodeId,
+            portId: anchorPortId,
+            position: anchorPosition,
+            isInput: isInput
+        )
+
+        pendingConnection = PendingConnection(from: anchor)
+        updateValidDropPorts(for: anchor)
+
+        WFLogger.info("Valid drop ports: \(validDropPortIds.count)", category: .connection)
+    }
+
+    /// Complete or cancel a reconnection
+    public func completeReconnection(to targetAnchor: ConnectionAnchor?) {
+        WFLogger.connection("END reconnection", details: "targetAnchor=\(targetAnchor != nil ? "provided" : "nil")")
+
+        defer {
+            WFLogger.debug("Cleanup: clearing state", category: .connection)
+            pendingConnection = nil
+            validDropPortIds.removeAll()
+            reconnectingConnection = nil
+            hoveredPortId = nil
+        }
+
+        guard let pending = pendingConnection,
+              let originalConnection = reconnectingConnection else {
+            WFLogger.error("No pending connection or original connection!", category: .connection)
+            return
+        }
+
+        if let target = targetAnchor {
+            WFLogger.debug("Target: nodeId=\(target.nodeId.uuidString.prefix(8)), isInput=\(target.isInput)", category: .connection)
+            // Exclude the original connection from duplicate check (we're replacing it)
+            let canConnectResult = canConnect(from: pending.sourceAnchor, to: target, excluding: originalConnection.id)
+            WFLogger.debug("canConnect: \(canConnectResult)", category: .connection)
+
+            if canConnectResult {
+                saveSnapshot()
+
+                // Remove the original connection
+                connections.removeAll { $0.id == originalConnection.id }
+
+                let source = pending.sourceAnchor
+                let (outputAnchor, inputAnchor) = source.isInput ? (target, source) : (source, target)
+
+                let newConnection = WorkflowConnection(
+                    sourceNodeId: outputAnchor.nodeId,
+                    sourcePortId: outputAnchor.portId,
+                    targetNodeId: inputAnchor.nodeId,
+                    targetPortId: inputAnchor.portId
+                )
+                connections.append(newConnection)
+                WFLogger.info("Created new connection: \(newConnection.id.uuidString.prefix(8))", category: .connection)
+            } else {
+                WFLogger.warning("Cannot connect - keeping original", category: .connection)
+            }
+        } else {
+            WFLogger.warning("No target - cancelled, keeping original", category: .connection)
+        }
+    }
+
     public func addConnection(_ connection: WorkflowConnection) {
         // Prevent duplicate connections
         guard !connections.contains(where: {
@@ -607,7 +712,7 @@ public final class CanvasState {
 
     // MARK: - Connection Validation
 
-    public func canConnect(from sourceAnchor: ConnectionAnchor, to targetAnchor: ConnectionAnchor) -> Bool {
+    public func canConnect(from sourceAnchor: ConnectionAnchor, to targetAnchor: ConnectionAnchor, excluding excludedConnectionId: UUID? = nil) -> Bool {
         // Cannot connect a port to itself
         if sourceAnchor.nodeId == targetAnchor.nodeId && sourceAnchor.portId == targetAnchor.portId {
             return false
@@ -623,14 +728,18 @@ public final class CanvasState {
             return false
         }
 
-        // Check if connection already exists
+        // Check if connection already exists (excluding the connection being reconnected)
         let (outputAnchor, inputAnchor) = sourceAnchor.isInput ? (targetAnchor, sourceAnchor) : (sourceAnchor, targetAnchor)
 
         let alreadyExists = connections.contains { connection in
-            connection.sourceNodeId == outputAnchor.nodeId &&
-            connection.sourcePortId == outputAnchor.portId &&
-            connection.targetNodeId == inputAnchor.nodeId &&
-            connection.targetPortId == inputAnchor.portId
+            // Skip the connection being reconnected
+            if let excludeId = excludedConnectionId, connection.id == excludeId {
+                return false
+            }
+            return connection.sourceNodeId == outputAnchor.nodeId &&
+                connection.sourcePortId == outputAnchor.portId &&
+                connection.targetNodeId == inputAnchor.nodeId &&
+                connection.targetPortId == inputAnchor.portId
         }
 
         return !alreadyExists
@@ -638,6 +747,9 @@ public final class CanvasState {
 
     public func updateValidDropPorts(for sourceAnchor: ConnectionAnchor) {
         validDropPortIds.removeAll()
+
+        // When reconnecting, exclude the original connection from validation
+        let excludeId = reconnectingConnection?.id
 
         for node in nodes {
             // Skip the source node (no self-connections)
@@ -654,7 +766,7 @@ public final class CanvasState {
                         position: .zero,
                         isInput: true
                     )
-                    if canConnect(from: sourceAnchor, to: targetAnchor) {
+                    if canConnect(from: sourceAnchor, to: targetAnchor, excluding: excludeId) {
                         validDropPortIds.insert(port.id)
                     }
                 }
@@ -667,7 +779,7 @@ public final class CanvasState {
                         position: .zero,
                         isInput: false
                     )
-                    if canConnect(from: sourceAnchor, to: targetAnchor) {
+                    if canConnect(from: sourceAnchor, to: targetAnchor, excluding: excludeId) {
                         validDropPortIds.insert(port.id)
                     }
                 }

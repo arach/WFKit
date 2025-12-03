@@ -400,32 +400,66 @@ public struct WorkflowCanvas: View {
         }
 
         ForEach(state.connections) { connection in
+            let isBeingReconnected = state.reconnectingConnection?.id == connection.id
+
             if let startPos = state.portPosition(nodeId: connection.sourceNodeId, portId: connection.sourcePortId),
                let endPos = state.portPosition(nodeId: connection.targetNodeId, portId: connection.targetPortId) {
                 let sourceNode = state.nodes.first(where: { $0.id == connection.sourceNodeId })
                 let targetNode = state.nodes.first(where: { $0.id == connection.targetNodeId })
-                ConnectionView(
-                    from: startPos,
-                    to: endPos,
-                    color: sourceNode?.type.color.opacity(0.8) ?? .gray,
-                    sourceColor: sourceNode?.type.color,
-                    targetColor: targetNode?.type.color,
-                    isSelected: state.selectedConnectionId == connection.id,
-                    isHovered: state.hoveredConnectionId == connection.id
-                )
-                .contentShape(ConnectionHitShape(from: startPos, to: endPos, tolerance: 10))
-                .onTapGesture {
-                    handleConnectionTap(connection)
-                }
-                .onHover { isHovered in
-                    if !state.isDragging {
-                        state.hoveredConnectionId = isHovered ? connection.id : nil
+                let isHovered = state.hoveredConnectionId == connection.id
+                let isSelected = state.selectedConnectionId == connection.id
+
+                // Only render the connection line if NOT being reconnected
+                if !isBeingReconnected {
+                    ConnectionView(
+                        from: startPos,
+                        to: endPos,
+                        color: sourceNode?.type.color.opacity(0.8) ?? .gray,
+                        sourceColor: sourceNode?.type.color,
+                        targetColor: targetNode?.type.color,
+                        isSelected: isSelected,
+                        isHovered: isHovered
+                    )
+                    .contentShape(ConnectionHitShape(from: startPos, to: endPos, tolerance: 10))
+                    .onTapGesture {
+                        handleConnectionTap(connection)
+                    }
+                    .onHover { hovering in
+                        if !state.isDragging && state.pendingConnection == nil {
+                            state.hoveredConnectionId = hovering ? connection.id : nil
+                        }
+                    }
+                    .contextMenu {
+                        Button("Delete Connection") {
+                            state.removeConnection(connection.id)
+                        }
                     }
                 }
-                .contextMenu {
-                    Button("Delete Connection") {
-                        state.removeConnection(connection.id)
-                    }
+
+                // Endpoint handles for drag-to-reconnect
+                // Show when hovered, selected, OR being reconnected (to keep gesture alive)
+                if isHovered || isSelected || isBeingReconnected {
+                    // Source endpoint handle
+                    ConnectionEndpointHandle(
+                        position: startPos,
+                        color: sourceNode?.type.color ?? .gray,
+                        isSource: true,
+                        connection: connection,
+                        canvasState: state,
+                        onReconnectionUpdate: handleReconnectionUpdate,
+                        onReconnectionEnd: handleReconnectionEnd
+                    )
+
+                    // Target endpoint handle
+                    ConnectionEndpointHandle(
+                        position: endPos,
+                        color: targetNode?.type.color ?? .gray,
+                        isSource: false,
+                        connection: connection,
+                        canvasState: state,
+                        onReconnectionUpdate: handleReconnectionUpdate,
+                        onReconnectionEnd: handleReconnectionEnd
+                    )
                 }
             }
         }
@@ -516,7 +550,10 @@ public struct WorkflowCanvas: View {
     private func backgroundPanGesture() -> some Gesture {
         DragGesture()
             .onChanged { value in
-                guard !state.isDragging else { return }
+                // Skip panning during node drag, connection drag, or reconnection
+                guard !state.isDragging,
+                      state.pendingConnection == nil,
+                      state.reconnectingConnection == nil else { return }
 
                 state.isPanning = true
                 let delta = CGSize(
@@ -641,6 +678,48 @@ public struct WorkflowCanvas: View {
 
     private func handleConnectionTap(_ connection: WorkflowConnection) {
         state.selectConnection(connection.id)
+    }
+
+    // MARK: - Reconnection Handlers
+
+    private func handleReconnectionUpdate(_ canvasPoint: CGPoint) {
+        // Snap to valid ports
+        let snapThreshold: CGFloat = 25
+        var snappedPoint = canvasPoint
+        var closestDistance: CGFloat = snapThreshold
+
+        for portId in state.validDropPortIds {
+            if let (_, portPos) = findPortPosition(portId: portId) {
+                let distance = hypot(
+                    canvasPoint.x - portPos.x,
+                    canvasPoint.y - portPos.y
+                )
+                if distance < closestDistance {
+                    closestDistance = distance
+                    snappedPoint = portPos
+                }
+            }
+        }
+
+        state.pendingConnection?.currentPoint = snappedPoint
+
+        // Update hovered port
+        if closestDistance < snapThreshold {
+            for portId in state.validDropPortIds {
+                if let (_, portPos) = findPortPosition(portId: portId),
+                   hypot(snappedPoint.x - portPos.x, snappedPoint.y - portPos.y) < 1 {
+                    state.hoveredPortId = portId
+                    break
+                }
+            }
+        } else {
+            state.hoveredPortId = nil
+        }
+    }
+
+    private func handleReconnectionEnd(_ targetAnchor: ConnectionAnchor?) {
+        state.completeReconnection(to: targetAnchor)
+        state.hoveredConnectionId = nil
     }
 
     private func handleDelete() {

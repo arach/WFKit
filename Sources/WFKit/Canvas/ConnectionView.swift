@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Connection View (Bezier Curve)
 
@@ -306,6 +307,8 @@ public struct PendingConnectionView: View {
     let color: Color
     var isSnapped: Bool = false
 
+    @State private var pulsePhase: CGFloat = 0
+
     public init(from: CGPoint, to: CGPoint, color: Color, isSnapped: Bool = false) {
         self.from = from
         self.to = to
@@ -314,13 +317,138 @@ public struct PendingConnectionView: View {
     }
 
     public var body: some View {
-        ConnectionView(
-            from: from,
-            to: to,
-            color: isSnapped ? color : color.opacity(0.7),
-            lineWidth: isSnapped ? 2.0 : 1.8,
-            animated: !isSnapped,
-            showFlowAnimation: false
+        ZStack {
+            // Glow effect when snapped
+            if isSnapped {
+                ConnectionView(
+                    from: from,
+                    to: to,
+                    color: Color.green.opacity(0.3 + pulsePhase * 0.2),
+                    lineWidth: 6,
+                    animated: false,
+                    showFlowAnimation: false
+                )
+                .blur(radius: 3)
+            }
+
+            // Main connection line
+            ConnectionView(
+                from: from,
+                to: to,
+                color: isSnapped ? Color.green : color.opacity(0.7),
+                lineWidth: isSnapped ? 2.5 : 1.8,
+                animated: !isSnapped,
+                showFlowAnimation: false
+            )
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                pulsePhase = 1.0
+            }
+        }
+    }
+}
+
+// MARK: - Connection Endpoint Handle (for drag-to-reconnect)
+
+public struct ConnectionEndpointHandle: View {
+    let position: CGPoint
+    let color: Color
+    let isSource: Bool
+    let connection: WorkflowConnection
+    let canvasState: CanvasState
+    let onReconnectionUpdate: (CGPoint) -> Void
+    let onReconnectionEnd: (ConnectionAnchor?) -> Void
+
+    @State private var isDragging: Bool = false
+    @State private var isHovered: Bool = false
+    @Environment(\.wfTheme) private var theme
+
+    private let handleSize: CGFloat = 14
+    private let hitAreaSize: CGFloat = 24
+
+    public init(
+        position: CGPoint,
+        color: Color,
+        isSource: Bool,
+        connection: WorkflowConnection,
+        canvasState: CanvasState,
+        onReconnectionUpdate: @escaping (CGPoint) -> Void,
+        onReconnectionEnd: @escaping (ConnectionAnchor?) -> Void
+    ) {
+        self.position = position
+        self.color = color
+        self.isSource = isSource
+        self.connection = connection
+        self.canvasState = canvasState
+        self.onReconnectionUpdate = onReconnectionUpdate
+        self.onReconnectionEnd = onReconnectionEnd
+    }
+
+    public var body: some View {
+        ZStack {
+            // Outer glow when hovered/dragging
+            if isHovered || isDragging {
+                Circle()
+                    .fill(color.opacity(0.3))
+                    .frame(width: handleSize + 8, height: handleSize + 8)
+            }
+
+            // Main handle
+            Circle()
+                .fill(isDragging ? color : (isHovered ? color.opacity(0.9) : theme.nodeBackground))
+                .overlay(
+                    Circle()
+                        .strokeBorder(color, lineWidth: 2)
+                )
+                .frame(width: handleSize, height: handleSize)
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+        }
+        .frame(width: hitAreaSize, height: hitAreaSize)
+        .contentShape(Circle().size(width: hitAreaSize, height: hitAreaSize))
+        .position(position)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.openHand.push()
+            } else if !isDragging {
+                NSCursor.pop()
+            }
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .named("canvas"))
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        WFLogger.gesture("Drag started", details: "isSource=\(isSource)")
+                        NSCursor.pop()
+                        NSCursor.closedHand.push()
+                        // Start reconnection - fromSource means we're dragging from source end
+                        canvasState.startReconnection(connection, fromSource: isSource)
+                    }
+                    let canvasPoint = canvasState.canvasPoint(from: value.location)
+                    onReconnectionUpdate(canvasPoint)
+                }
+                .onEnded { value in
+                    WFLogger.gesture("Drag ended")
+                    isDragging = false
+                    NSCursor.pop()
+                    let canvasPoint = canvasState.canvasPoint(from: value.location)
+                    WFLogger.debug("Canvas point: \(canvasPoint)", category: .gesture)
+                    if let portHit = canvasState.portAt(canvasPoint: canvasPoint) {
+                        WFLogger.debug("Port hit: nodeId=\(portHit.nodeId.uuidString.prefix(8)), isInput=\(portHit.isInput)", category: .gesture)
+                        let targetAnchor = ConnectionAnchor(
+                            nodeId: portHit.nodeId,
+                            portId: portHit.portId,
+                            position: canvasState.portPosition(nodeId: portHit.nodeId, portId: portHit.portId) ?? canvasPoint,
+                            isInput: portHit.isInput
+                        )
+                        onReconnectionEnd(targetAnchor)
+                    } else {
+                        WFLogger.debug("No port hit - cancelling", category: .gesture)
+                        onReconnectionEnd(nil)
+                    }
+                }
         )
     }
 }

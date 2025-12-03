@@ -347,9 +347,31 @@ struct PortView: View {
 
     @State private var isHovered: Bool = false
     @State private var isDragging: Bool = false
+    @State private var pulsePhase: CGFloat = 0
     @Environment(\.wfTheme) private var theme
 
     private let portSize: CGFloat = 12
+
+    // Computed states for visual feedback
+    private var isConnectionDragActive: Bool {
+        canvasState.pendingConnection != nil
+    }
+
+    private var isValidDropTarget: Bool {
+        canvasState.validDropPortIds.contains(port.id)
+    }
+
+    private var isPendingSource: Bool {
+        canvasState.pendingConnection?.sourceAnchor.portId == port.id
+    }
+
+    private var isSnapped: Bool {
+        canvasState.hoveredPortId == port.id && isValidDropTarget
+    }
+
+    private var isInvalidDuringDrag: Bool {
+        isConnectionDragActive && !isValidDropTarget && !isPendingSource
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -372,39 +394,78 @@ struct PortView: View {
 
     @ViewBuilder
     private var portCircle: some View {
-        let isValidDropTarget = canvasState.validDropPortIds.contains(port.id)
-        let isPendingSource = canvasState.pendingConnection?.sourceAnchor.portId == port.id
-
         ZStack {
+            // Outer pulsing glow for valid drop targets
+            if isValidDropTarget {
+                Circle()
+                    .fill(Color.green.opacity(0.15 + pulsePhase * 0.15))
+                    .frame(width: portSize + 16, height: portSize + 16)
+                    .blur(radius: 4)
+
+                Circle()
+                    .strokeBorder(Color.green.opacity(0.4 + pulsePhase * 0.3), lineWidth: 2)
+                    .frame(width: portSize + 10, height: portSize + 10)
+            }
+
+            // Snapped indicator ring
+            if isSnapped {
+                Circle()
+                    .strokeBorder(Color.green, lineWidth: 2.5)
+                    .frame(width: portSize + 6, height: portSize + 6)
+                    .shadow(color: Color.green.opacity(0.6), radius: 4)
+            }
+
+            // Hover glow (when not in drag mode)
+            if isHovered && !isConnectionDragActive {
+                Circle()
+                    .fill(color.opacity(0.2))
+                    .frame(width: portSize + 8, height: portSize + 8)
+            }
+
+            // Main port circle
             Circle()
-                .fill(
-                    isHovered || isDragging || isValidDropTarget
-                        ? color
-                        : theme.border
-                )
+                .fill(portFillColor)
                 .overlay(
                     Circle()
-                        .strokeBorder(
-                            isValidDropTarget
-                                ? Color.green
-                                : (isPendingSource ? color.opacity(0.8) : color.opacity(0.5)),
-                            lineWidth: 1.5
-                        )
+                        .strokeBorder(portBorderColor, lineWidth: portBorderWidth)
                 )
                 .frame(width: portSize, height: portSize)
                 .shadow(
-                    color: Color.black.opacity(0.2),
-                    radius: 2,
+                    color: portShadowColor,
+                    radius: isSnapped ? 4 : 2,
                     x: 0,
                     y: 1
                 )
+
+            // Center dot for valid targets
+            if isValidDropTarget && !isSnapped {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 4, height: 4)
+            }
+
+            // Checkmark for snapped state
+            if isSnapped {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundColor(.white)
+            }
         }
-        .scaleEffect(isHovered || isValidDropTarget ? 1.2 : 1.0)
+        .scaleEffect(portScale)
+        .opacity(portOpacity)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isValidDropTarget)
+        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isSnapped)
+        .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
         .onHover { hovering in
             isHovered = hovering
             onHover?(hovering ? port.id : nil)
+        }
+        .onAppear {
+            // Start pulse animation
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulsePhase = 1.0
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 5, coordinateSpace: .named("canvas"))
@@ -442,12 +503,96 @@ struct PortView: View {
         )
     }
 
+    // MARK: - Visual Properties
+
+    private var portFillColor: Color {
+        if isSnapped {
+            return Color.green
+        } else if isValidDropTarget {
+            return Color.green.opacity(0.8)
+        } else if isPendingSource || isDragging {
+            return color
+        } else if isHovered {
+            return color
+        } else if isInvalidDuringDrag {
+            return theme.border.opacity(0.5)
+        } else {
+            return theme.border
+        }
+    }
+
+    private var portBorderColor: Color {
+        if isSnapped {
+            return Color.white
+        } else if isValidDropTarget {
+            return Color.green
+        } else if isPendingSource {
+            return color
+        } else if isInvalidDuringDrag {
+            return color.opacity(0.2)
+        } else {
+            return color.opacity(0.5)
+        }
+    }
+
+    private var portBorderWidth: CGFloat {
+        if isSnapped || isValidDropTarget {
+            return 2.0
+        } else {
+            return 1.5
+        }
+    }
+
+    private var portShadowColor: Color {
+        if isSnapped {
+            return Color.green.opacity(0.5)
+        } else if isValidDropTarget {
+            return Color.green.opacity(0.3)
+        } else {
+            return Color.black.opacity(0.2)
+        }
+    }
+
+    private var portScale: CGFloat {
+        if isSnapped {
+            return 1.4
+        } else if isValidDropTarget {
+            return 1.25
+        } else if isHovered || isDragging {
+            return 1.15
+        } else if isInvalidDuringDrag {
+            return 0.9
+        } else {
+            return 1.0
+        }
+    }
+
+    private var portOpacity: CGFloat {
+        if isInvalidDuringDrag {
+            return 0.4
+        } else {
+            return 1.0
+        }
+    }
+
     @ViewBuilder
     private var portLabel: some View {
         Text(port.label)
             .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundColor(isHovered ? theme.textSecondary : theme.textTertiary)
+            .foregroundColor(labelColor)
+            .opacity(isInvalidDuringDrag ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
+    }
+
+    private var labelColor: Color {
+        if isValidDropTarget || isSnapped {
+            return Color.green
+        } else if isHovered {
+            return theme.textSecondary
+        } else {
+            return theme.textTertiary
+        }
     }
 }
 
