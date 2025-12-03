@@ -76,9 +76,9 @@ const Navbar = () => (
         <a href="#" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Documentation</a>
         <a href="#" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Examples</a>
         <div className="h-4 w-[1px] bg-zinc-800"></div>
-        <a href="#" className="text-zinc-500 hover:text-white transition-colors flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest">GitHub</span>
+        <a href="https://github.com/arach/WFKit" className="text-zinc-500 hover:text-white transition-colors flex items-center gap-2 border border-zinc-800 hover:border-zinc-600 px-4 py-2">
             <Github size={16} />
+            <span className="text-xs font-bold uppercase tracking-widest">GitHub</span>
         </a>
       </div>
     </div>
