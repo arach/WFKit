@@ -73,8 +73,8 @@ const Navbar = () => (
         <span className="font-sans font-bold text-lg tracking-tighter text-white">WFKit</span>
       </div>
       <div className="hidden md:flex items-center gap-8">
-        <a href="#" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Documentation</a>
-        <a href="#" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Examples</a>
+        <a href="#docs" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Documentation</a>
+        <a href="#install" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Install</a>
         <div className="h-4 w-[1px] bg-zinc-800"></div>
         <a href="https://github.com/arach/WFKit" className="text-zinc-500 hover:text-white transition-colors flex items-center gap-2 border border-zinc-800 hover:border-zinc-600 px-4 py-2">
             <Github size={16} />
@@ -144,8 +144,8 @@ export default function App() {
              </p>
              
              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-               <Button size="lg" icon={<Package size={16}/>}>ADD PACKAGE</Button>
-               <Button size="lg" variant="outline" icon={<ArrowDown size={16}/>}>READ THE DOCS</Button>
+               <a href="#install"><Button size="lg" icon={<Package size={16}/>}>ADD PACKAGE</Button></a>
+               <a href="#docs"><Button size="lg" variant="outline" icon={<ArrowDown size={16}/>}>READ THE DOCS</Button></a>
              </div>
              
              <div className="mt-16 border-t border-zinc-800 pt-6 flex flex-wrap items-center gap-4 text-[10px] text-zinc-600 uppercase tracking-widest font-bold">
@@ -245,8 +245,95 @@ export default function App() {
            </div>
         </div>
 
+        {/* Documentation Section */}
+        <div id="docs" className="mb-40 scroll-mt-24">
+          <div className="flex items-end justify-between mb-10">
+            <h2 className="text-3xl font-bold text-white font-sans tracking-tight">DOCUMENTATION</h2>
+            <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">Quick Start</span>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Step 1 */}
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 border border-zinc-700 flex items-center justify-center text-xs font-bold text-white">1</div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Add Dependency</h3>
+              </div>
+              <p className="text-xs text-zinc-500 font-mono mb-4">Add WFKit to your Package.swift dependencies:</p>
+              <pre className="bg-black border border-zinc-800 p-3 text-[10px] text-zinc-400 font-mono overflow-x-auto">
+{`dependencies: [
+  .package(
+    url: "https://github.com/arach/WFKit.git",
+    from: "1.0.0"
+  )
+]`}
+              </pre>
+            </div>
+
+            {/* Step 2 */}
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 border border-zinc-700 flex items-center justify-center text-xs font-bold text-white">2</div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Import & Initialize</h3>
+              </div>
+              <p className="text-xs text-zinc-500 font-mono mb-4">Import WFKit and create a canvas state:</p>
+              <pre className="bg-black border border-zinc-800 p-3 text-[10px] text-zinc-400 font-mono overflow-x-auto">
+{`import SwiftUI
+import WFKit
+
+struct ContentView: View {
+  @State var canvas = CanvasState()
+
+  var body: some View {
+    WFWorkflowEditor(state: canvas)
+  }
+}`}
+              </pre>
+            </div>
+
+            {/* Step 3 */}
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 border border-zinc-700 flex items-center justify-center text-xs font-bold text-white">3</div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Add Nodes</h3>
+              </div>
+              <p className="text-xs text-zinc-500 font-mono mb-4">Create nodes and connections programmatically:</p>
+              <pre className="bg-black border border-zinc-800 p-3 text-[10px] text-zinc-400 font-mono overflow-x-auto">
+{`let node = WorkflowNode(
+  type: .action,
+  title: "Process Data",
+  position: CGPoint(x: 200, y: 100)
+)
+
+canvas.addNode(node)
+canvas.connect(from: source, to: node)`}
+              </pre>
+            </div>
+          </div>
+
+          {/* API Reference */}
+          <div className="mt-10 border border-zinc-800 bg-[#0c0c0e]">
+            <div className="border-b border-zinc-800 px-6 py-4">
+              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Core API</h3>
+            </div>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 divide-x divide-zinc-800">
+              {[
+                { name: "CanvasState", desc: "Observable state container for the workflow canvas" },
+                { name: "WorkflowNode", desc: "Represents a single node with inputs/outputs" },
+                { name: "WFWorkflowEditor", desc: "Main SwiftUI view component" },
+                { name: "NodeType", desc: "Extensible node type definitions" },
+              ].map((api, i) => (
+                <div key={i} className="p-4">
+                  <code className="text-xs text-white font-mono font-bold">{api.name}</code>
+                  <p className="text-[10px] text-zinc-500 mt-1 font-mono">{api.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Quick Install */}
-        <div className="max-w-2xl mx-auto text-center border border-zinc-800 p-12 bg-[#0c0c0e] relative overflow-hidden">
+        <div id="install" className="max-w-2xl mx-auto text-center border border-zinc-800 p-12 bg-[#0c0c0e] relative overflow-hidden scroll-mt-24">
            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-20"></div>
            
            <h2 className="text-3xl font-bold text-white font-sans tracking-tight mb-6">START BUILDING</h2>
@@ -255,10 +342,10 @@ export default function App() {
            </p>
            
            <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center bg-black border border-zinc-800 p-4 w-full max-w-lg group hover:border-zinc-600 transition-colors cursor-pointer" onClick={() => navigator.clipboard.writeText('.package(url: "https://github.com/wfkit/wfkit.git", from: "1.0.0")')}>
+              <div className="flex items-center bg-black border border-zinc-800 p-4 w-full max-w-lg group hover:border-zinc-600 transition-colors cursor-pointer" onClick={() => navigator.clipboard.writeText('.package(url: "https://github.com/arach/WFKit.git", from: "1.0.0")')}>
                  <span className="text-zinc-500 mr-4 select-none">$</span>
                  <code className="flex-1 text-left text-xs md:text-sm text-zinc-300 font-mono">
-                   .package(url: "https://github.com/wfkit/wfkit.git", from: "1.0.0")
+                   .package(url: "https://github.com/arach/WFKit.git", from: "1.0.0")
                  </code>
                  <Copy size={14} className="text-zinc-600 group-hover:text-white transition-colors" />
               </div>
