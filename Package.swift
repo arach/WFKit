@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Workflow",
+    name: "WFKit",
     platforms: [
         .macOS(.v14)
     ],
