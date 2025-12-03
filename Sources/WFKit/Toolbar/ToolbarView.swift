@@ -92,9 +92,10 @@ public struct ToolbarView: View {
             } label: {
                 Image(systemName: theme.appearance.icon)
                     .font(.system(size: 13))
-                    .foregroundColor(theme.textSecondary)
+                    .foregroundStyle(theme.textSecondary)
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(theme.textSecondary)
             .help("Change Appearance")
 
             Divider()

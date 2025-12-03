@@ -31,20 +31,12 @@ public struct WFWorkflowEditor: View {
                 .fill(theme.divider)
                 .frame(height: 1)
 
-            // Main content: Canvas + Inspector
-            HStack(spacing: 0) {
-                // Canvas (main area)
-                WorkflowCanvas(state: state)
-
-                // Inspector sidebar (right side)
-                if showInspector {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(width: 1)
-
-                    InspectorView(state: state, isVisible: $showInspector)
-                }
-            }
+            // Canvas
+            WorkflowCanvas(state: state)
+        }
+        .inspector(isPresented: $showInspector) {
+            InspectorView(state: state, isVisible: $showInspector)
+                .inspectorColumnWidth(min: 250, ideal: 350, max: 600)
         }
         .background(theme.canvasBackground)
         .onChange(of: state.selectedNodeIds) { _, newSelection in

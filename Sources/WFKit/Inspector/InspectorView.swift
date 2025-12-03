@@ -70,7 +70,7 @@ public struct InspectorView: View {
                 emptySelectionView
             }
         }
-        .frame(width: 280)
+        .frame(minWidth: 300, idealWidth: 350, maxWidth: .infinity)
         .background(theme.panelBackground)
     }
 

@@ -223,28 +223,62 @@ public struct NodeView: View {
     @ViewBuilder
     private var nodeBody: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let prompt = node.configuration.prompt {
-                Text(prompt)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-                    .lineLimit(2)
-                    .padding(.horizontal, 12)
-            } else if let condition = node.configuration.condition {
-                Text("if: \(condition)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-            } else if let actionType = node.configuration.actionType {
-                Text(actionType)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-                    .padding(.horizontal, 12)
-            }
+            Text(nodeSummary)
+                .font(.system(size: 10))
+                .foregroundColor(theme.textSecondary)
+                .lineLimit(2)
+                .padding(.horizontal, 12)
 
             Spacer()
         }
         .padding(.top, 8)
+    }
+
+    private var nodeSummary: String {
+        switch node.type {
+        case .trigger:
+            return "Starts the workflow"
+
+        case .llm:
+            var parts: [String] = []
+            if let model = node.configuration.model {
+                let shortModel = model.split(separator: "-").last.map(String.init) ?? model
+                parts.append(shortModel)
+            }
+            if let temp = node.configuration.temperature {
+                parts.append("t:\(String(format: "%.1f", temp))")
+            }
+            if let maxTokens = node.configuration.maxTokens {
+                parts.append("\(maxTokens)tok")
+            }
+            if parts.isEmpty {
+                return "AI processing"
+            }
+            return parts.joined(separator: " · ")
+
+        case .transform:
+            if let expr = node.configuration.expression, !expr.isEmpty {
+                let preview = expr.prefix(35).replacingOccurrences(of: "\n", with: " ")
+                return "\(preview)\(expr.count > 35 ? "…" : "")"
+            }
+            return "Transform data"
+
+        case .condition:
+            if let cond = node.configuration.condition, !cond.isEmpty {
+                let preview = cond.prefix(30).replacingOccurrences(of: "\n", with: " ")
+                return "if \(preview)\(cond.count > 30 ? "…" : "")"
+            }
+            return "Conditional branch"
+
+        case .action:
+            if let actionType = node.configuration.actionType, !actionType.isEmpty {
+                return actionType
+            }
+            return "Perform action"
+
+        case .output:
+            return "Output result"
+        }
     }
 
     // MARK: - Input Ports
@@ -267,8 +301,8 @@ public struct NodeView: View {
                     .frame(height: node.size.height / CGFloat(node.inputs.count))
                 }
             }
-            .frame(width: portSize * 2)
-            .offset(x: -node.size.width / 2 - portSize / 2)
+            .frame(width: portSize * 3)
+            .offset(x: -node.size.width / 2)  // Port centered on left edge
         }
     }
 
@@ -292,8 +326,8 @@ public struct NodeView: View {
                     .frame(height: node.size.height / CGFloat(node.outputs.count))
                 }
             }
-            .frame(width: portSize * 2)
-            .offset(x: node.size.width / 2 + portSize / 2)
+            .frame(width: portSize * 3)
+            .offset(x: node.size.width / 2)  // Port centered on right edge
         }
     }
 }
