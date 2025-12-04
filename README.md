@@ -6,6 +6,10 @@ A beautiful, native macOS workflow editor component built with SwiftUI.
 ![Swift 5.9+](https://img.shields.io/badge/Swift-5.9%2B-orange)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-Native-green)
 
+<p align="center">
+  <img src="landing/public/screenshots/canvas-preview.png" alt="WFKit Workflow Editor" width="800">
+</p>
+
 ## Features
 
 - **Node-based Editor** - Drag-and-drop workflow canvas with pan, zoom, and grid snapping
