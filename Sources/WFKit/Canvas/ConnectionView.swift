@@ -52,8 +52,69 @@ public struct ConnectionView: View {
         curveStyle
     }
 
+    /// Calculate the bounding rect for the bezier curve including control points
+    private var bezierBounds: CGRect {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        // Calculate control offset based on layout mode
+        var controlOffset: CGFloat
+        if layoutMode == .vertical {
+            if abs(dy) < 50 {
+                controlOffset = max(abs(dx) * 0.3, 80)
+            } else if abs(dx) < 50 {
+                controlOffset = min(abs(dy) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dy) * 0.4, 100), distance * 0.45)
+            }
+        } else {
+            if abs(dx) < 50 {
+                controlOffset = max(abs(dy) * 0.3, 80)
+            } else if abs(dy) < 50 {
+                controlOffset = min(abs(dx) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dx) * 0.4, 100), distance * 0.45)
+            }
+        }
+
+        // Calculate all control points
+        let control1: CGPoint
+        let control2: CGPoint
+
+        if layoutMode == .vertical {
+            if dy >= 0 {
+                control1 = CGPoint(x: from.x, y: from.y + controlOffset)
+                control2 = CGPoint(x: to.x, y: to.y - controlOffset)
+            } else {
+                control1 = CGPoint(x: from.x, y: from.y - controlOffset)
+                control2 = CGPoint(x: to.x, y: to.y + controlOffset)
+            }
+        } else {
+            control1 = CGPoint(x: from.x + controlOffset, y: from.y)
+            control2 = CGPoint(x: to.x - controlOffset, y: to.y)
+        }
+
+        // Find bounding box of all points
+        let allX = [from.x, to.x, control1.x, control2.x]
+        let allY = [from.y, to.y, control1.y, control2.y]
+
+        let minX = allX.min()! - 50  // Extra padding for stroke width and arrows
+        let maxX = allX.max()! + 50
+        let minY = allY.min()! - 50
+        let maxY = allY.max()! + 50
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     public var body: some View {
+        let bounds = bezierBounds
+
         Canvas { context, size in
+            // Translate context to account for bounds offset
+            var context = context
+            context.translateBy(x: -bounds.origin.x, y: -bounds.origin.y)
+
             let path = connectionPath(from: from, to: to, style: effectiveStyle)
 
             // Use theme line width as base, with vertical mode multiplier
@@ -127,7 +188,8 @@ public struct ConnectionView: View {
                 drawDeleteButton(context: context, path: path)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: bounds.width, height: bounds.height)
+        .position(x: bounds.midX, y: bounds.midY)
         .allowsHitTesting(false)
         .onAppear {
             if animated {

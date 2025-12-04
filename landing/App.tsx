@@ -511,41 +511,94 @@ canvas.connect(from: source, to: node)`}
                 </div>
               </div>
 
-              {/* Step Types */}
-              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">14 Step Types</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {/* Root Properties Table */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Root Properties</h4>
+              <div className="border border-zinc-800 bg-black mb-8 overflow-x-auto">
+                <div className="grid grid-cols-4 border-b border-zinc-800 bg-zinc-900/20 min-w-[600px]">
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Property</div>
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">Type</div>
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">Required</div>
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">Description</div>
+                </div>
                 {[
-                  { category: "AI", steps: ["LLM Generation", "Transcribe Audio"] },
-                  { category: "Logic", steps: ["Transform Data", "Conditional Branch"] },
-                  { category: "Output", steps: ["Send Notification", "Notify iPhone", "Copy to Clipboard", "Save to File"] },
-                  { category: "Integration", steps: ["Create Reminder", "Run Shell Command", "Trigger Detection", "Extract Intents", "Execute Workflows", "Webhook"] },
+                  { prop: "slug", type: "string", req: "Yes", desc: "Unique kebab-case identifier. Used to generate stable UUIDs." },
+                  { prop: "name", type: "string", req: "Yes", desc: "Display name shown in UI" },
+                  { prop: "description", type: "string", req: "Yes", desc: "Brief description of workflow purpose" },
+                  { prop: "icon", type: "string", req: "Yes", desc: "SF Symbol name (e.g., \"waveform\", \"doc.text\")" },
+                  { prop: "color", type: "string", req: "Yes", desc: "Theme: blue, purple, pink, red, orange, yellow, green, mint, teal, cyan, indigo, gray" },
+                  { prop: "isEnabled", type: "bool", req: "Yes", desc: "Whether workflow can be run" },
+                  { prop: "isPinned", type: "bool", req: "Yes", desc: "Shows in quick access / iOS widget" },
+                  { prop: "autoRun", type: "bool", req: "Yes", desc: "Runs automatically after recording" },
+                  { prop: "steps", type: "array", req: "Yes", desc: "Ordered list of workflow steps" },
+                ].map((row, i) => (
+                  <div key={i} className="grid grid-cols-4 border-b last:border-b-0 border-zinc-800 hover:bg-white/5 transition-colors min-w-[600px]">
+                    <div className="p-3 text-[11px] font-mono text-purple-400">{row.prop}</div>
+                    <div className="p-3 text-[11px] font-mono text-zinc-400 border-l border-zinc-800">{row.type}</div>
+                    <div className="p-3 text-[11px] font-mono text-zinc-500 border-l border-zinc-800">{row.req}</div>
+                    <div className="p-3 text-[11px] font-mono text-zinc-500 border-l border-zinc-800">{row.desc}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Step Types with Config Keys */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">14 Step Types & Config Keys</h4>
+              <div className="grid md:grid-cols-2 gap-4 mb-8">
+                {[
+                  { category: "AI", color: "purple", steps: [
+                    { type: "LLM Generation", key: "llm", props: "costTier, provider, modelId, prompt, systemPrompt, temperature, maxTokens, topP" },
+                    { type: "Transcribe Audio", key: "transcribe", props: "model, overwriteExisting, saveAsVersion" },
+                  ]},
+                  { category: "Logic", color: "blue", steps: [
+                    { type: "Transform Data", key: "transform", props: "operation (Extract JSON|List|Regex Match|Split Text), parameters" },
+                    { type: "Conditional Branch", key: "conditional", props: "condition, thenSteps[], elseSteps[]" },
+                  ]},
+                  { category: "Output", color: "green", steps: [
+                    { type: "Send Notification", key: "notification", props: "title, body, sound" },
+                    { type: "Notify iPhone", key: "iOSPush", props: "title, body, sound, includeOutput" },
+                    { type: "Copy to Clipboard", key: "clipboard", props: "content" },
+                    { type: "Save to File", key: "saveFile", props: "filename, directory (@Obsidian/|@Documents/|@Desktop/), content, appendIfExists" },
+                  ]},
+                  { category: "Integration", color: "orange", steps: [
+                    { type: "Create Reminder", key: "appleReminders", props: "listName, title, notes, dueDate, priority (1=high, 5=medium, 9=low)" },
+                    { type: "Run Shell Command", key: "shell", props: "executable, arguments[], timeout, captureStderr" },
+                    { type: "Trigger Detection", key: "trigger", props: "phrases[], caseSensitive, searchLocation (Start|End|Anywhere), stopIfNoMatch" },
+                    { type: "Extract Intents", key: "intentExtract", props: "inputKey, extractionMethod (LLM|Keywords|Hybrid), confidenceThreshold" },
+                    { type: "Execute Workflows", key: "executeWorkflows", props: "intentsKey, stopOnError, parallel" },
+                    { type: "Webhook", key: "webhook", props: "url, method, headers, body" },
+                  ]},
                 ].map((group, i) => (
                   <div key={i} className="border border-zinc-800 p-4">
                     <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{group.category}</h5>
-                    <div className="space-y-1">
+                    <div className="space-y-3">
                       {group.steps.map((step, j) => (
-                        <div key={j} className="text-[11px] text-zinc-400 font-mono">{step}</div>
+                        <div key={j} className="border-l-2 border-zinc-700 pl-3">
+                          <div className="text-[11px] text-white font-mono font-bold">{step.type}</div>
+                          <div className="text-[10px] text-purple-400 font-mono">config.{step.key}</div>
+                          <div className="text-[10px] text-zinc-600 font-mono mt-1">{step.props}</div>
+                        </div>
                       ))}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Template Variables */}
+              {/* Template Variables - Enhanced */}
               <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Template Variables</h4>
-              <div className="grid md:grid-cols-2 gap-6 mb-8">
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
                 <div className="border border-zinc-800 p-4">
                   <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Built-in Variables</h5>
                   <div className="space-y-2 text-[11px] font-mono">
                     {[
                       { var: "{{TRANSCRIPT}}", desc: "Full transcript text" },
                       { var: "{{TITLE}}", desc: "Voice memo title" },
-                      { var: "{{DATE}}", desc: "Recording date" },
+                      { var: "{{DATE}}", desc: "Recording date (YYYY-MM-DD)" },
                       { var: "{{DATETIME}}", desc: "Full timestamp" },
+                      { var: "{{DURATION}}", desc: "Recording duration" },
                       { var: "{{AUDIO_PATH}}", desc: "Path to audio file" },
+                      { var: "{{MEMO_ID}}", desc: "Unique memo identifier" },
                     ].map((v, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                        <code className="text-purple-400">{v.var}</code>
+                      <div key={i} className="flex items-start gap-2">
+                        <code className="text-purple-400 shrink-0">{v.var}</code>
                         <span className="text-zinc-500">{v.desc}</span>
                       </div>
                     ))}
@@ -554,25 +607,78 @@ canvas.connect(from: source, to: node)`}
                 <div className="border border-zinc-800 p-4">
                   <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Step References</h5>
                   <div className="space-y-2 text-[11px] font-mono">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-start gap-2">
                       <code className="text-purple-400">{"{{step-id}}"}</code>
                       <span className="text-zinc-500">Full output of step</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <code className="text-purple-400">{"{{step-id.property}}"}</code>
+                    <div className="flex items-start gap-2">
+                      <code className="text-purple-400">{"{{step-id.prop}}"}</code>
                       <span className="text-zinc-500">Nested property (JSON)</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <code className="text-purple-400">{"{{NOW+1d}}"}</code>
-                      <span className="text-zinc-500">Date expressions</span>
+                    <div className="flex items-start gap-2">
+                      <code className="text-purple-400">{"{{step.arr[0]}}"}</code>
+                      <span className="text-zinc-500">Array element access</span>
                     </div>
+                    <div className="mt-3 pt-3 border-t border-zinc-800">
+                      <div className="text-[10px] text-zinc-600">Example chain:</div>
+                      <code className="text-[10px] text-zinc-400">{"{{extract.features[0].title}}"}</code>
+                    </div>
+                  </div>
+                </div>
+                <div className="border border-zinc-800 p-4">
+                  <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Date Expressions</h5>
+                  <div className="space-y-2 text-[11px] font-mono">
+                    {[
+                      { var: "{{NOW}}", desc: "Current time" },
+                      { var: "{{NOW+1d}}", desc: "Tomorrow" },
+                      { var: "{{NOW+3d}}", desc: "3 days from now" },
+                      { var: "{{NOW+1w}}", desc: "1 week from now" },
+                    ].map((v, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <code className="text-purple-400">{v.var}</code>
+                        <span className="text-zinc-500">{v.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* LLM Generation Example - Full */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">LLM Generation Config (Most Common)</h4>
+              <div className="grid lg:grid-cols-2 gap-6 mb-8">
+                <pre className="bg-black border border-zinc-800 p-4 text-[11px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
+{`{
+  "id": "summarize",
+  "type": "LLM Generation",
+  "config": {
+    "llm": {
+      "costTier": "budget",
+      "prompt": "Summarize: {{TRANSCRIPT}}",
+      "systemPrompt": "You are helpful.",
+      "temperature": 0.7,
+      "maxTokens": 1024
+    }
+  }
+}`}
+                </pre>
+                <div className="border border-zinc-800 p-4">
+                  <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">LLM Config Properties</h5>
+                  <div className="space-y-2 text-[11px] font-mono">
+                    <div><code className="text-purple-400">costTier</code> <span className="text-zinc-600">"budget" | "balanced" | "capable"</span></div>
+                    <div><code className="text-purple-400">provider</code> <span className="text-zinc-600">"gemini" | "openai" | "anthropic" | "groq" | "mlx"</span></div>
+                    <div><code className="text-purple-400">modelId</code> <span className="text-zinc-600">Optional specific model ID</span></div>
+                    <div><code className="text-purple-400">prompt</code> <span className="text-zinc-600">Required. Template with variables</span></div>
+                    <div><code className="text-purple-400">systemPrompt</code> <span className="text-zinc-600">Optional system message</span></div>
+                    <div><code className="text-purple-400">temperature</code> <span className="text-zinc-600">0.0-2.0, default 0.7</span></div>
+                    <div><code className="text-purple-400">maxTokens</code> <span className="text-zinc-600">Max output tokens, default 1024</span></div>
+                    <div><code className="text-purple-400">topP</code> <span className="text-zinc-600">0.0-1.0, default 0.9</span></div>
                   </div>
                 </div>
               </div>
 
               {/* TWF to WFKit Mapping */}
               <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">TWF → WFKit Node Mapping</h4>
-              <div className="border border-zinc-800 bg-black">
+              <div className="border border-zinc-800 bg-black mb-8">
                 <div className="grid grid-cols-3 border-b border-zinc-800 bg-zinc-900/20">
                   <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">TWF Step Type</div>
                   <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">WFKit NodeType</div>
@@ -584,13 +690,37 @@ canvas.connect(from: source, to: node)`}
                   { twf: "Conditional Branch", wfkit: ".condition", cat: "Logic" },
                   { twf: "Transform Data", wfkit: ".transform", cat: "Logic" },
                   { twf: "Send Notification", wfkit: ".notification", cat: "Output" },
+                  { twf: "Notify iPhone", wfkit: ".notification", cat: "Output" },
                   { twf: "Copy to Clipboard", wfkit: ".output", cat: "Output" },
+                  { twf: "Save to File", wfkit: ".output", cat: "Output" },
+                  { twf: "Create Reminder", wfkit: ".output", cat: "Apple" },
                   { twf: "Run Shell Command", wfkit: ".action", cat: "Integration" },
+                  { twf: "Trigger Detection", wfkit: ".trigger", cat: "Trigger" },
+                  { twf: "Extract Intents", wfkit: ".trigger", cat: "Trigger" },
+                  { twf: "Execute Workflows", wfkit: ".trigger", cat: "Trigger" },
                 ].map((row, i) => (
                   <div key={i} className="grid grid-cols-3 border-b last:border-b-0 border-zinc-800 hover:bg-white/5 transition-colors">
                     <div className="p-3 text-[11px] font-mono text-zinc-400">{row.twf}</div>
                     <div className="p-3 text-[11px] font-mono text-white border-l border-zinc-800">{row.wfkit}</div>
                     <div className="p-3 text-[11px] font-mono text-zinc-500 border-l border-zinc-800">{row.cat}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Validation Rules */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Validation Rules</h4>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                {[
+                  { rule: "1", desc: "slug must be unique, kebab-case, no spaces" },
+                  { rule: "2", desc: "Step id must be unique within workflow" },
+                  { rule: "3", desc: "thenSteps/elseSteps must reference valid step IDs" },
+                  { rule: "4", desc: "Template variables must reference existing steps or built-ins" },
+                  { rule: "5", desc: "At least one step required" },
+                  { rule: "6", desc: "File naming: {slug}.twf.json" },
+                ].map((r, i) => (
+                  <div key={i} className="flex items-start gap-3 border border-zinc-800 p-3">
+                    <div className="w-5 h-5 bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400 shrink-0">{r.rule}</div>
+                    <div className="text-[11px] text-zinc-500 font-mono">{r.desc}</div>
                   </div>
                 ))}
               </div>
@@ -602,19 +732,23 @@ canvas.connect(from: source, to: node)`}
             <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
               <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Sample Workflows</h4>
               <p className="text-xs text-zinc-500 mb-4">
-                The package includes sample .twf.json files in <code className="text-zinc-400">Sources/WFKit/Resources/SampleWorkflows/</code>
+                Included in <code className="text-zinc-400">Sources/WFKit/Resources/SampleWorkflows/</code>
               </p>
               <div className="space-y-2">
                 {[
-                  { file: "quick-summary.twf.json", complexity: "Simple" },
-                  { file: "tweet-summary.twf.json", complexity: "Medium" },
-                  { file: "hq-transcribe.twf.json", complexity: "Medium" },
-                  { file: "feature-ideation.twf.json", complexity: "Complex" },
-                  { file: "learning-capture.twf.json", complexity: "Complex" },
+                  { file: "quick-summary.twf.json", desc: "Single LLM step", complexity: "Simple" },
+                  { file: "tweet-summary.twf.json", desc: "LLM + clipboard + notification", complexity: "Medium" },
+                  { file: "hq-transcribe.twf.json", desc: "WhisperKit + LLM polish", complexity: "Medium" },
+                  { file: "feature-ideation.twf.json", desc: "JSON extraction + conditional + reminders", complexity: "Complex" },
+                  { file: "learning-capture.twf.json", desc: "Multi-step Obsidian integration", complexity: "Complex" },
+                  { file: "hey-talkie.twf.json", desc: "Trigger detection + intent dispatch", complexity: "Complex" },
                 ].map((f, i) => (
                   <div key={i} className="flex items-center justify-between text-[11px] font-mono p-2 border border-zinc-800 hover:border-zinc-700 transition-colors">
-                    <span className="text-zinc-300">{f.file}</span>
-                    <span className="text-zinc-600">{f.complexity}</span>
+                    <div>
+                      <span className="text-zinc-300">{f.file}</span>
+                      <span className="text-zinc-600 ml-2">— {f.desc}</span>
+                    </div>
+                    <span className="text-zinc-600 shrink-0">{f.complexity}</span>
                   </div>
                 ))}
               </div>
@@ -626,17 +760,20 @@ canvas.connect(from: source, to: node)`}
                 TWF uses slug-based IDs that convert to stable UUIDs via SHA256 hashing. Same slug always produces the same UUID.
               </p>
               <pre className="bg-black border border-zinc-800 p-3 text-[10px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
-{`// UUID from slug algorithm
+{`// Workflow UUID
 UUID = SHA256("talkie.twf:{slug}")[:16]
+
+// Step UUID
+UUID = SHA256("talkie.twf:{slug}/{step-id}")[:16]
 
 // With version 4 bits set
 uuidBytes[6] = (bytes[6] & 0x0F) | 0x40
 uuidBytes[8] = (bytes[8] & 0x3F) | 0x80
 
-// This ensures:
-// - Same slug → same UUID
-// - Safe re-imports (no duplication)
-// - Git-friendly (no random UUIDs)`}
+// Benefits:
+// ✓ Same slug → same UUID
+// ✓ Safe re-imports (no duplication)
+// ✓ Git-friendly (no random UUIDs)`}
               </pre>
             </div>
           </div>
