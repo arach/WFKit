@@ -1,66 +1,7 @@
 import React, { useState } from 'react';
-import { Terminal, Copy, Check, FileCode, Sliders, Database, Box, Cpu } from 'lucide-react';
+import { Terminal, Copy, Check, FileCode, Box } from 'lucide-react';
 
 const SNIPPETS = {
-  'Workflow.swift': `import WFKit
-import SwiftUI
-
-struct DataProcessingWorkflow: View {
-    @StateObject var store = CanvasState()
-
-    var body: some View {
-        WFWorkflowEditor(state: store)
-            .onAppear { defineWorkflow() }
-    }
-
-    func defineWorkflow() {
-        // Declarative node definitions
-        let fileWatcher = WorkflowNode(
-            type: .trigger,
-            title: "File Watcher",
-            position: CGPoint(x: 100, y: 150)
-        )
-
-        let parseCSV = WorkflowNode(
-            type: .transform,
-            title: "Parse CSV",
-            position: CGPoint(x: 350, y: 150),
-            configuration: NodeConfiguration(
-                expression: "rows.map { $0.split(\",\") }"
-            )
-        )
-
-        let validateSchema = WorkflowNode(
-            type: .condition,
-            title: "Filter Errors",
-            position: CGPoint(x: 600, y: 150),
-            configuration: NodeConfiguration(
-                condition: "row.isValid"
-            )
-        )
-
-        let exportJSON = WorkflowNode(
-            type: .output,
-            title: "Export JSON",
-            position: CGPoint(x: 850, y: 100)
-        )
-
-        // Build the graph
-        store.addNodes([
-            fileWatcher,
-            parseCSV,
-            validateSchema,
-            exportJSON
-        ])
-
-        store.connect(from: fileWatcher, to: parseCSV)
-        store.connect(from: parseCSV, to: validateSchema)
-        store.connect(
-            from: validateSchema, port: "valid",
-            to: exportJSON
-        )
-    }
-}`,
   'App.swift': `import SwiftUI
 import WFKit
 
@@ -70,66 +11,179 @@ struct MyApp: App {
 
     var body: some Scene {
         WindowGroup {
+            // Load workflow from TWF file
             WFWorkflowEditor(state: canvas)
+                .onAppear {
+                    if let url = Bundle.main.url(
+                        forResource: "learning-capture",
+                        withExtension: "twf.json"
+                    ) {
+                        canvas.load(from: url)
+                    }
+                }
         }
     }
 }`,
-  'Agents.swift': `let agent = WorkflowNode(
-    type: .llm,
-    title: "Research Agent",
-    position: CGPoint(x: 400, y: 200),
-    configuration: NodeConfiguration(
-        prompt: """
-            Analyze the query and extract:
-            - Key entities
-            - Required data sources
-            - Suggested actions
-
-            Query: {{input}}
-            """,
-        model: "claude-sonnet-4-20250514",
-        temperature: 0.3,
-        maxTokens: 2048
-    )
-)`,
-  'Custom.swift': `// Extend with your own node types
-extension NodeType {
-    static let webhook = NodeType(
-        id: "webhook",
-        icon: "network",
-        color: Color(hex: "#00D4AA")
-    )
-}
-
-let stripeWebhook = WorkflowNode(
-    type: .webhook,
-    title: "Stripe Events",
-    outputs: [
-        .output("payment.success"),
-        .output("payment.failed"),
-        .output("subscription.created")
-    ]
-)`
+  'key-insights.twf.json': `{
+  "slug": "key-insights",
+  "name": "Key Insights",
+  "description": "Extract 3-5 key takeaways",
+  "icon": "lightbulb",
+  "color": "yellow",
+  "isEnabled": true,
+  "steps": [
+    {
+      "id": "extract-insights",
+      "type": "LLM Generation",
+      "config": {
+        "llm": {
+          "provider": "gemini",
+          "modelId": "gemini-2.0-flash",
+          "prompt": "Extract 3-5 key takeaways from:\\n{{TRANSCRIPT}}\\n\\nReturn JSON array: [\"Insight 1\", ...]",
+          "temperature": 0.5,
+          "maxTokens": 1024
+        }
+      }
+    }
+  ]
+}`,
+  'learning-capture.twf.json': `{
+  "slug": "learning-capture",
+  "name": "Learning Capture",
+  "description": "Voice notes → Obsidian with auto-tags",
+  "icon": "book.pages",
+  "color": "indigo",
+  "steps": [
+    {
+      "id": "extract-concepts",
+      "type": "LLM Generation",
+      "config": {
+        "llm": {
+          "costTier": "balanced",
+          "prompt": "Extract concepts from:\\n{{TRANSCRIPT}}\\n\\nReturn: {mainTopic, concepts[], keyInsight, questions[]}",
+          "temperature": 0.3
+        }
+      }
+    },
+    {
+      "id": "parse-json",
+      "type": "Transform Data",
+      "config": {
+        "transform": { "operation": "Extract JSON" }
+      }
+    },
+    {
+      "id": "format-note",
+      "type": "LLM Generation",
+      "config": {
+        "llm": {
+          "costTier": "budget",
+          "prompt": "Format as Obsidian note with [[backlinks]]:\\n{{parse-json}}",
+          "temperature": 0.3
+        }
+      }
+    },
+    {
+      "id": "save-note",
+      "type": "Save to File",
+      "config": {
+        "saveFile": {
+          "filename": "{{DATE}}-{{parse-json.mainTopic}}.md",
+          "directory": "@Obsidian/Learning",
+          "content": "# {{parse-json.mainTopic}}\\n{{format-note}}"
+        }
+      }
+    }
+  ]
+}`,
+  'brain-dump.twf.json': `{
+  "slug": "brain-dump-processor",
+  "name": "Brain Dump Processor",
+  "description": "Brainstorms → Ideas + Reminders + Notes",
+  "icon": "brain.head.profile",
+  "color": "purple",
+  "steps": [
+    {
+      "id": "transcribe",
+      "type": "Transcribe Audio",
+      "config": { "transcribe": { "model": "openai_whisper-small" } }
+    },
+    {
+      "id": "extract-ideas",
+      "type": "LLM Generation",
+      "config": {
+        "llm": {
+          "provider": "gemini",
+          "prompt": "Extract ideas from:\\n{{transcribe}}\\n\\nReturn: {ideas: [{title, category}], nextActions[]}",
+          "temperature": 0.5
+        }
+      }
+    },
+    {
+      "id": "check-actions",
+      "type": "Conditional Branch",
+      "config": {
+        "conditional": {
+          "condition": "{{extract-ideas.nextActions.length}} > 0",
+          "thenSteps": ["create-reminder"],
+          "elseSteps": []
+        }
+      }
+    },
+    {
+      "id": "create-reminder",
+      "type": "Create Reminder",
+      "config": {
+        "appleReminders": {
+          "title": "{{extract-ideas.nextActions[0]}}",
+          "dueDate": "{{NOW+1d}}"
+        }
+      }
+    },
+    {
+      "id": "expand-research",
+      "type": "LLM Generation",
+      "config": {
+        "llm": {
+          "provider": "openai",
+          "modelId": "gpt-4o",
+          "prompt": "Suggest related concepts and experiments for:\\n{{extract-ideas.ideas}}",
+          "temperature": 0.7
+        }
+      }
+    },
+    {
+      "id": "save-note",
+      "type": "Save to File",
+      "config": {
+        "saveFile": {
+          "filename": "{{DATE}}-{{TITLE}}.md",
+          "directory": "@Obsidian/Ideas",
+          "content": "# {{TITLE}}\\n{{expand-research}}"
+        }
+      }
+    }
+  ]
+}`
 };
 
 type FileName = keyof typeof SNIPPETS;
 
-// Robust Tokenizer Regex for Swift
-const TOKENIZER_REGEX = /(\/\/.*)|("""[\s\S]*?"""|"(?:[^"\\]|\\.)*")|(@\w+)|(\b(?:import|struct|var|let|func|return|some|extension|if|else|switch|case|default|public|private|init)\b)|(\b[A-Z]\w+\b)|(\b\w+:)/g;
+// Robust Tokenizer Regex for Swift and JSON
+const SWIFT_TOKENIZER_REGEX = /(\/\/.*)|("""[\s\S]*?"""|"(?:[^"\\]|\\.)*")|(@\w+)|(\b(?:import|struct|var|let|func|return|some|extension|if|else|switch|case|default|public|private|init)\b)|(\b[A-Z]\w+\b)|(\b\w+:)/g;
+const JSON_TOKENIZER_REGEX = /("(?:[^"\\]|\\.)*"\s*:)|("(?:[^"\\]|\\.)*")|(\b(?:true|false|null)\b)|(\b-?\d+\.?\d*\b)/g;
 
-const HighlightedCode = ({ code }: { code: string }) => {
+const HighlightedSwiftCode = ({ code }: { code: string }) => {
   const elements: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
 
-  // Reset regex state
-  TOKENIZER_REGEX.lastIndex = 0;
+  SWIFT_TOKENIZER_REGEX.lastIndex = 0;
 
-  while ((match = TOKENIZER_REGEX.exec(code)) !== null) {
+  while ((match = SWIFT_TOKENIZER_REGEX.exec(code)) !== null) {
     const [fullMatch, comment, string, decorator, keyword, type, arg] = match;
     const index = match.index;
 
-    // Push preceding plain text
     if (index > lastIndex) {
       elements.push(code.slice(lastIndex, index));
     }
@@ -150,10 +204,9 @@ const HighlightedCode = ({ code }: { code: string }) => {
       elements.push(fullMatch);
     }
 
-    lastIndex = TOKENIZER_REGEX.lastIndex;
+    lastIndex = SWIFT_TOKENIZER_REGEX.lastIndex;
   }
 
-  // Push remaining text
   if (lastIndex < code.length) {
     elements.push(code.slice(lastIndex));
   }
@@ -161,12 +214,54 @@ const HighlightedCode = ({ code }: { code: string }) => {
   return <>{elements}</>;
 };
 
+const HighlightedJsonCode = ({ code }: { code: string }) => {
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  JSON_TOKENIZER_REGEX.lastIndex = 0;
+
+  while ((match = JSON_TOKENIZER_REGEX.exec(code)) !== null) {
+    const [fullMatch, key, string, bool, num] = match;
+    const index = match.index;
+
+    if (index > lastIndex) {
+      elements.push(code.slice(lastIndex, index));
+    }
+
+    if (key) {
+      elements.push(<span key={index} className="text-blue-300">{key}</span>);
+    } else if (string) {
+      elements.push(<span key={index} className="text-green-400">{string}</span>);
+    } else if (bool) {
+      elements.push(<span key={index} className="text-purple-400">{bool}</span>);
+    } else if (num) {
+      elements.push(<span key={index} className="text-yellow-300">{num}</span>);
+    } else {
+      elements.push(fullMatch);
+    }
+
+    lastIndex = JSON_TOKENIZER_REGEX.lastIndex;
+  }
+
+  if (lastIndex < code.length) {
+    elements.push(code.slice(lastIndex));
+  }
+
+  return <>{elements}</>;
+};
+
+const HighlightedCode = ({ code, isJson }: { code: string; isJson: boolean }) => {
+  return isJson ? <HighlightedJsonCode code={code} /> : <HighlightedSwiftCode code={code} />;
+};
+
 interface CodeArchitectureProps {
   frameless?: boolean;
 }
 
 export const CodeArchitecture: React.FC<CodeArchitectureProps> = ({ frameless = false }) => {
-  const [activeFile, setActiveFile] = useState<FileName>('Workflow.swift');
+  const [activeFile, setActiveFile] = useState<FileName>('App.swift');
+  const isJson = activeFile.endsWith('.json');
   const [copied, setCopied] = useState(false);
 
   const codeSnippet = SNIPPETS[activeFile];
@@ -206,10 +301,10 @@ export const CodeArchitecture: React.FC<CodeArchitectureProps> = ({ frameless = 
         </div>
         
         <div className="flex flex-col gap-1">
-          <FileItem name="Workflow.swift" icon={FileCode} color="text-blue-400" />
           <FileItem name="App.swift" icon={Box} color="text-orange-400" />
-          <FileItem name="Agents.swift" icon={Cpu} color="text-purple-400" />
-          <FileItem name="Custom.swift" icon={Sliders} color="text-green-400" />
+          <FileItem name="key-insights.twf.json" icon={FileCode} color="text-yellow-400" />
+          <FileItem name="learning-capture.twf.json" icon={FileCode} color="text-indigo-400" />
+          <FileItem name="brain-dump.twf.json" icon={FileCode} color="text-purple-400" />
         </div>
         
         <div className="mt-auto border-t border-zinc-800 pt-4">
@@ -240,7 +335,7 @@ export const CodeArchitecture: React.FC<CodeArchitectureProps> = ({ frameless = 
                 <div key={i} className="table-row">
                   <span className="table-cell text-zinc-800 select-none text-right pr-4 w-8">{i + 1}</span>
                   <span className="table-cell whitespace-pre-wrap break-all">
-                    <HighlightedCode code={line} />
+                    <HighlightedCode code={line} isJson={isJson} />
                   </span>
                 </div>
               ))}
