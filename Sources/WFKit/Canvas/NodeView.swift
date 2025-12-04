@@ -1,4 +1,7 @@
 import SwiftUI
+import os
+
+private let portLogger = Logger(subsystem: "dev.arach.WFKit", category: "Ports")
 
 // MARK: - Node View
 
@@ -7,6 +10,7 @@ public struct NodeView: View {
     let isSelected: Bool
     let isHovered: Bool
     let canvasState: CanvasState
+    let scale: CGFloat
 
     var onPortDragStart: ((ConnectionAnchor) -> Void)?
     var onPortDragUpdate: ((CGPoint) -> Void)?
@@ -17,13 +21,43 @@ public struct NodeView: View {
     @State private var isDraggingPort: Bool = false
     @State private var showEditor: Bool = false
     @State private var editedNode: WorkflowNode
+    @State private var hoverEdge: HoverEdge? = nil
+    @State private var hideEdgeWorkItem: DispatchWorkItem? = nil
     @Environment(\.wfTheme) private var theme
+
+    // Edge proximity detection
+    private enum HoverEdge {
+        case left, right
+    }
+
+    // How close to edge (in points) to trigger port reveal
+    private let edgeRevealThreshold: CGFloat = 30
+    // How long to keep ports visible after leaving the edge zone
+    private let portHideDelay: TimeInterval = 0.4
+
+    // Counter-scale factor to keep text crisp (cancels out parent scaleEffect)
+    // Clamped so text still scales somewhat at extreme zoom levels
+    private var counterScale: CGFloat {
+        let raw = 1.0 / scale
+        // Clamp between 0.6 and 1.4 - text stays mostly fixed in 70%-170% zoom range
+        // but starts scaling at extremes
+        return min(max(raw, 0.6), 1.4)
+    }
+
+    // Debug mode to show scale values (use WFDebugToolbar instead)
+    private let debugMode = false
+
+    // Show ports when hovering near ANY edge, or connection drag is active, or node is selected
+    private var showPorts: Bool {
+        hoverEdge != nil || canvasState.pendingConnection != nil || isSelected
+    }
 
     public init(
         node: WorkflowNode,
         isSelected: Bool,
         isHovered: Bool,
         canvasState: CanvasState,
+        scale: CGFloat = 1.0,
         onPortDragStart: ((ConnectionAnchor) -> Void)? = nil,
         onPortDragUpdate: ((CGPoint) -> Void)? = nil,
         onPortDragEnd: ((ConnectionAnchor?) -> Void)? = nil,
@@ -34,6 +68,7 @@ public struct NodeView: View {
         self.isSelected = isSelected
         self.isHovered = isHovered
         self.canvasState = canvasState
+        self.scale = scale
         self.onPortDragStart = onPortDragStart
         self.onPortDragUpdate = onPortDragUpdate
         self.onPortDragEnd = onPortDragEnd
@@ -44,9 +79,13 @@ public struct NodeView: View {
 
     private let portSize: CGFloat = 10
 
+    // Port area extends beyond node bounds - need extra width for hit testing
+    private let portExtension: CGFloat = 20
+
     public var body: some View {
         ZStack {
             nodeBackground
+                .frame(width: node.size.width, height: node.size.height)
 
             VStack(spacing: 0) {
                 nodeHeader
@@ -54,10 +93,60 @@ public struct NodeView: View {
             }
             .frame(width: node.size.width, height: node.size.height)
 
+            // Input ports - positioned at left edge
             inputPorts
+                .opacity(showPorts ? 1 : 0)
+                .allowsHitTesting(showPorts)
+                .animation(.easeOut(duration: 0.15), value: showPorts)
+                .offset(x: -node.size.width / 2 - portExtension / 2)
+
+            // Output ports - positioned at right edge
             outputPorts
+                .opacity(showPorts ? 1 : 0)
+                .allowsHitTesting(showPorts)
+                .animation(.easeOut(duration: 0.15), value: showPorts)
+                .offset(x: node.size.width / 2 + portExtension / 2)
         }
-        .frame(width: node.size.width, height: node.size.height)
+        // Expand frame to include port hit areas
+        .frame(width: node.size.width + portExtension * 2, height: node.size.height)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                // Adjust location to be relative to node bounds (not the expanded frame)
+                let adjustedX = location.x - portExtension
+
+                // Calculate which edge is closest based on cursor position
+                let distanceToLeft = adjustedX
+                let distanceToRight = node.size.width - adjustedX
+
+                let newEdge: HoverEdge?
+                if distanceToLeft < edgeRevealThreshold {
+                    newEdge = .left
+                } else if distanceToRight < edgeRevealThreshold {
+                    newEdge = .right
+                } else {
+                    newEdge = nil
+                }
+
+                if let edge = newEdge {
+                    // Entering an edge zone - cancel any pending hide and show immediately
+                    hideEdgeWorkItem?.cancel()
+                    hideEdgeWorkItem = nil
+                    if hoverEdge != edge {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            hoverEdge = edge
+                        }
+                    }
+                } else if hoverEdge != nil {
+                    // Left edge zone but still on node - schedule delayed hide
+                    scheduleHideEdge()
+                }
+
+            case .ended:
+                // Left the node entirely - schedule delayed hide
+                scheduleHideEdge()
+            }
+        }
         .onTapGesture(count: 2) {
             editedNode = node
             showEditor = true
@@ -180,11 +269,13 @@ public struct NodeView: View {
                 .frame(width: 20, height: 20)
                 .background(node.effectiveColor)
                 .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
+                .scaleEffect(counterScale, anchor: .leading)
 
             Text(node.title)
                 .font(theme.nodeTitle)
                 .foregroundColor(theme.textPrimary)
                 .lineLimit(1)
+                .scaleEffect(counterScale, anchor: .leading)
 
             Spacer()
 
@@ -196,6 +287,7 @@ public struct NodeView: View {
                 .padding(.vertical, 3)
                 .background(theme.sectionBackground.opacity(0.8))
                 .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
+                .scaleEffect(counterScale, anchor: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -217,12 +309,11 @@ public struct NodeView: View {
                 topTrailingRadius: theme.nodeRadius
             )
         )
-        .overlay(
+        .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(node.effectiveColor.opacity(0.2))
                 .frame(height: 1)
-                .offset(y: 15.5)
-        )
+        }
     }
 
     // MARK: - Node Body
@@ -230,15 +321,58 @@ public struct NodeView: View {
     @ViewBuilder
     private var nodeBody: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Summary text - counter-scale for crisp rendering
             Text(nodeSummary)
                 .font(theme.nodeSubtitle)
                 .foregroundColor(theme.textSecondary)
                 .lineLimit(2)
+                .scaleEffect(counterScale, anchor: .topLeading)
                 .padding(.horizontal, 12)
 
             Spacer()
+
+            // Debug overlay
+            if debugMode {
+                debugOverlay
+            }
         }
         .padding(.top, 8)
+    }
+
+    // MARK: - Debug Overlay
+
+    @ViewBuilder
+    private var debugOverlay: some View {
+        HStack(spacing: 4) {
+            Text("z:\(String(format: "%.0f", scale * 100))%")
+            Text("cs:\(String(format: "%.2f", counterScale))")
+            Text("sz:\(Int(node.size.width))x\(Int(node.size.height))")
+        }
+        .font(.system(size: 8, weight: .medium, design: .monospaced))
+        .foregroundColor(.orange)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.black.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .scaleEffect(counterScale, anchor: .bottomLeading)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Edge Hover Helpers
+
+    private func scheduleHideEdge() {
+        // Cancel any existing scheduled hide
+        hideEdgeWorkItem?.cancel()
+
+        // Schedule a new delayed hide
+        let workItem = DispatchWorkItem { [self] in
+            withAnimation(.easeOut(duration: 0.2)) {
+                hoverEdge = nil
+            }
+        }
+        hideEdgeWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + portHideDelay, execute: workItem)
     }
 
     private var nodeSummary: String {
@@ -314,6 +448,7 @@ public struct NodeView: View {
                         nodeId: node.id,
                         color: node.effectiveColor,
                         canvasState: canvasState,
+                        scale: scale,
                         onDragStart: onPortDragStart,
                         onDragUpdate: onPortDragUpdate,
                         onDragEnd: onPortDragEnd,
@@ -322,8 +457,7 @@ public struct NodeView: View {
                     .frame(height: node.size.height / CGFloat(node.inputs.count))
                 }
             }
-            .frame(width: portSize * 3)
-            .offset(x: -node.size.width / 2)  // Port centered on left edge
+            .frame(width: portSize * 3 + portExtension)
         }
     }
 
@@ -339,6 +473,7 @@ public struct NodeView: View {
                         nodeId: node.id,
                         color: node.effectiveColor,
                         canvasState: canvasState,
+                        scale: scale,
                         onDragStart: onPortDragStart,
                         onDragUpdate: onPortDragUpdate,
                         onDragEnd: onPortDragEnd,
@@ -347,8 +482,7 @@ public struct NodeView: View {
                     .frame(height: node.size.height / CGFloat(node.outputs.count))
                 }
             }
-            .frame(width: portSize * 3)
-            .offset(x: node.size.width / 2)  // Port centered on right edge
+            .frame(width: portSize * 3 + portExtension)
         }
     }
 }
@@ -360,6 +494,7 @@ struct PortView: View {
     let nodeId: UUID
     let color: Color
     let canvasState: CanvasState
+    let scale: CGFloat
 
     var onDragStart: ((ConnectionAnchor) -> Void)?
     var onDragUpdate: ((CGPoint) -> Void)?
@@ -372,6 +507,9 @@ struct PortView: View {
     @Environment(\.wfTheme) private var theme
 
     private let portSize: CGFloat = 12
+
+    // Counter-scale factor to keep text crisp
+    private var counterScale: CGFloat { 1.0 / scale }
 
     // Computed states for visual feedback
     private var isConnectionDragActive: Bool {
@@ -472,6 +610,8 @@ struct PortView: View {
                     .foregroundColor(.white)
             }
         }
+        .frame(width: portSize + 20, height: portSize + 20)
+        .contentShape(Rectangle())
         .scaleEffect(portScale)
         .opacity(portOpacity)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
@@ -480,17 +620,10 @@ struct PortView: View {
         .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
         .onHover { hovering in
             isHovered = hovering
-            onHover?(hovering ? port.id : nil)
-        }
-        .onTapGesture {
-            // Handle click to complete connection when in connection mode
-            if isConnectionDragActive && isValidDropTarget {
-                canvasState.completeConnection(
-                    to: nodeId,
-                    targetPortId: port.id,
-                    isInput: port.isInput
-                )
+            if hovering {
+                portLogger.debug("hover: \(port.label, privacy: .public) isInput=\(port.isInput) isValidTarget=\(isValidDropTarget)")
             }
+            onHover?(hovering ? port.id : nil)
         }
         .onAppear {
             // Start pulse animation
@@ -498,40 +631,37 @@ struct PortView: View {
                 pulsePhase = 1.0
             }
         }
-        .gesture(
-            DragGesture(minimumDistance: 5, coordinateSpace: .named("canvas"))
-                .onChanged { value in
-                    if !isDragging {
-                        isDragging = true
-                        if let portPos = canvasState.portPosition(nodeId: nodeId, portId: port.id) {
-                            let anchor = ConnectionAnchor(
-                                nodeId: nodeId,
-                                portId: port.id,
-                                position: portPos,
-                                isInput: port.isInput
-                            )
-                            onDragStart?(anchor)
-                        }
-                    }
-                    let canvasPoint = canvasState.canvasPoint(from: value.location)
-                    onDragUpdate?(canvasPoint)
+        .onTapGesture {
+            portLogger.info("tap: \(port.label, privacy: .public) isInput=\(port.isInput) connectionActive=\(isConnectionDragActive) isValidTarget=\(isValidDropTarget)")
+
+            if isConnectionDragActive {
+                // Complete connection if this is a valid target
+                if isValidDropTarget {
+                    portLogger.notice("complete: \(port.label, privacy: .public)")
+                    canvasState.completeConnection(
+                        to: nodeId,
+                        targetPortId: port.id,
+                        isInput: port.isInput
+                    )
+                } else {
+                    portLogger.debug("rejected: not a valid target")
                 }
-                .onEnded { value in
-                    isDragging = false
-                    let canvasPoint = canvasState.canvasPoint(from: value.location)
-                    if let portHit = canvasState.portAt(canvasPoint: canvasPoint) {
-                        let targetAnchor = ConnectionAnchor(
-                            nodeId: portHit.nodeId,
-                            portId: portHit.portId,
-                            position: canvasState.portPosition(nodeId: portHit.nodeId, portId: portHit.portId) ?? canvasPoint,
-                            isInput: portHit.isInput
-                        )
-                        onDragEnd?(targetAnchor)
-                    } else {
-                        onDragEnd?(nil)
-                    }
+            } else {
+                // Start a new connection from this port
+                if let portPos = canvasState.portPosition(nodeId: nodeId, portId: port.id) {
+                    portLogger.info("start: \(port.label, privacy: .public) at (\(portPos.x, format: .fixed(precision: 0)), \(portPos.y, format: .fixed(precision: 0)))")
+                    let anchor = ConnectionAnchor(
+                        nodeId: nodeId,
+                        portId: port.id,
+                        position: portPos,
+                        isInput: port.isInput
+                    )
+                    onDragStart?(anchor)
+                } else {
+                    portLogger.warning("no position for \(port.label, privacy: .public)")
                 }
-        )
+            }
+        }
     }
 
     // MARK: - Visual Properties
@@ -612,6 +742,7 @@ struct PortView: View {
             .font(.system(size: 9, weight: .medium, design: .monospaced))
             .foregroundColor(labelColor)
             .opacity(isInvalidDuringDrag ? 0.4 : 1.0)
+            .scaleEffect(counterScale)
             .animation(.easeInOut(duration: 0.15), value: isHovered)
             .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
     }

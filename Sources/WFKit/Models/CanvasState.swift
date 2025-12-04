@@ -617,6 +617,7 @@ public final class CanvasState {
     public func resetView() {
         offset = .zero
         scale = 1.0
+        targetScale = 1.0
     }
 
     public func zoomIn(animated: Bool = true) {
@@ -667,6 +668,7 @@ public final class CanvasState {
         let scaleX = size.width / contentWidth
         let scaleY = size.height / contentHeight
         scale = max(minScale, min(min(scaleX, scaleY), maxScale))
+        targetScale = scale
 
         // Center the content
         let centerX = (minX + maxX) / 2
