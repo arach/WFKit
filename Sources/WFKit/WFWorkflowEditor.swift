@@ -55,7 +55,7 @@ public struct WFWorkflowEditor: View {
             // Canvas
             WorkflowCanvas(state: state)
         }
-        .inspector(isPresented: isReadOnly ? .constant(false) : $showInspector) {
+        .inspector(isPresented: $showInspector) {
             InspectorView(state: state, isVisible: $showInspector)
                 .inspectorColumnWidth(min: 250, ideal: 350, max: 600)
         }

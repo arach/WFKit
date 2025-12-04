@@ -5,8 +5,9 @@ import SwiftUI
 public struct InspectorView: View {
     @Bindable var state: CanvasState
     @Binding var isVisible: Bool
-    @State private var expandedSections: Set<String> = ["node", "config"]
+    @State private var expandedSections: Set<String> = ["node", "config", "details"]
     @Environment(\.wfTheme) private var theme
+    @Environment(\.wfReadOnly) private var isReadOnly
 
     public init(state: CanvasState, isVisible: Binding<Bool>) {
         self.state = state
@@ -34,14 +35,28 @@ public struct InspectorView: View {
                             consolidatedNodeSection(node)
                         }
 
-                        // CONFIG: Settings + Ports
-                        InspectorSection(
-                            title: "CONFIG",
-                            icon: "gearshape.fill",
-                            id: "config",
-                            expandedSections: $expandedSections
-                        ) {
-                            consolidatedConfigSection(node)
+                        // CONFIG: Settings + Ports (hidden in read-only mode)
+                        if !isReadOnly {
+                            InspectorSection(
+                                title: "CONFIG",
+                                icon: "gearshape.fill",
+                                id: "config",
+                                expandedSections: $expandedSections
+                            ) {
+                                consolidatedConfigSection(node)
+                            }
+                        }
+
+                        // DETAILS: Show customFields in read-only mode
+                        if let customFields = node.configuration.customFields, !customFields.isEmpty {
+                            InspectorSection(
+                                title: "DETAILS",
+                                icon: "doc.text.fill",
+                                id: "details",
+                                expandedSections: $expandedSections
+                            ) {
+                                customFieldsSection(customFields)
+                            }
                         }
                     }
                     .padding(.vertical, 12)
@@ -108,68 +123,119 @@ public struct InspectorView: View {
 
                 Spacer()
 
-                // Color picker
-                ColorPickerButton(
-                    selectedColor: node.effectiveColor,
-                    defaultColor: node.type.color,
-                    customColor: node.customColor,
-                    onColorChange: { newColor in
+                // Color picker (hidden in read-only mode)
+                if !isReadOnly {
+                    ColorPickerButton(
+                        selectedColor: node.effectiveColor,
+                        defaultColor: node.type.color,
+                        customColor: node.customColor,
+                        onColorChange: { newColor in
+                            var updated = node
+                            updated.customColor = newColor
+                            state.updateNode(updated)
+                        }
+                    )
+                }
+            }
+
+            // Row 2: Title (read-only or editable)
+            if isReadOnly {
+                Text(node.title)
+                    .font(.system(size: 13))
+                    .foregroundColor(theme.textPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(theme.border, lineWidth: 1)
+                    )
+            } else {
+                TextField("Node name", text: Binding(
+                    get: { node.title },
+                    set: { newValue in
                         var updated = node
-                        updated.customColor = newColor
+                        updated.title = newValue
                         state.updateNode(updated)
                     }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(theme.inputBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(theme.border, lineWidth: 1)
                 )
             }
 
-            // Row 2: Title
-            TextField("Node name", text: Binding(
-                get: { node.title },
-                set: { newValue in
-                    var updated = node
-                    updated.title = newValue
-                    state.updateNode(updated)
-                }
-            ))
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .foregroundColor(theme.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(theme.inputBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(theme.border, lineWidth: 1)
-            )
+            // Row 3: Position (read-only display in read-only mode)
+            if isReadOnly {
+                HStack(spacing: 12) {
+                    InspectorInlineField(label: "X", labelWidth: 14) {
+                        Text(String(format: "%.0f", node.position.x))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(theme.textSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(theme.inputBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .strokeBorder(theme.border, lineWidth: 1)
+                            )
+                    }
 
-            // Row 3: Position (X, Y inline)
-            HStack(spacing: 12) {
-                InspectorInlineField(label: "X", labelWidth: 14) {
-                    TextField("X", value: Binding(
-                        get: { node.position.x },
-                        set: { newValue in
-                            guard let newValue = newValue else { return }
-                            var updated = node
-                            updated.position.x = newValue
-                            state.updateNode(updated)
-                        }
-                    ), format: .number)
-                    .textFieldStyle(InspectorCompactTextFieldStyle())
-                    .font(.system(size: 11, design: .monospaced))
+                    InspectorInlineField(label: "Y", labelWidth: 14) {
+                        Text(String(format: "%.0f", node.position.y))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(theme.textSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(theme.inputBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .strokeBorder(theme.border, lineWidth: 1)
+                            )
+                    }
                 }
+            } else {
+                HStack(spacing: 12) {
+                    InspectorInlineField(label: "X", labelWidth: 14) {
+                        TextField("X", value: Binding(
+                            get: { node.position.x },
+                            set: { newValue in
+                                guard let newValue = newValue else { return }
+                                var updated = node
+                                updated.position.x = newValue
+                                state.updateNode(updated)
+                            }
+                        ), format: .number)
+                        .textFieldStyle(InspectorCompactTextFieldStyle())
+                        .font(.system(size: 11, design: .monospaced))
+                    }
 
-                InspectorInlineField(label: "Y", labelWidth: 14) {
-                    TextField("Y", value: Binding(
-                        get: { node.position.y },
-                        set: { newValue in
-                            guard let newValue = newValue else { return }
-                            var updated = node
-                            updated.position.y = newValue
-                            state.updateNode(updated)
-                        }
-                    ), format: .number)
-                    .textFieldStyle(InspectorCompactTextFieldStyle())
-                    .font(.system(size: 11, design: .monospaced))
+                    InspectorInlineField(label: "Y", labelWidth: 14) {
+                        TextField("Y", value: Binding(
+                            get: { node.position.y },
+                            set: { newValue in
+                                guard let newValue = newValue else { return }
+                                var updated = node
+                                updated.position.y = newValue
+                                state.updateNode(updated)
+                            }
+                        ), format: .number)
+                        .textFieldStyle(InspectorCompactTextFieldStyle())
+                        .font(.system(size: 11, design: .monospaced))
+                    }
                 }
             }
         }
@@ -592,6 +658,75 @@ public struct InspectorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.panelBackground.opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+    }
+
+    // MARK: - Custom Fields Section (Read-Only Display)
+
+    @ViewBuilder
+    private func customFieldsSection(_ customFields: [String: String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(customFields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                customFieldRow(key: key, value: value)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func customFieldRow(key: String, value: String) -> some View {
+        let displayKey = formatFieldKey(key)
+        let isLongValue = value.count > 50 || value.contains("\n")
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text(displayKey)
+                .font(.system(size: 9, weight: .medium, design: .default))
+                .tracking(0.3)
+                .foregroundColor(theme.textTertiary)
+                .textCase(.uppercase)
+
+            if isLongValue {
+                // Multi-line text area for long values
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(theme.textPrimary)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                            .strokeBorder(theme.border, lineWidth: 1)
+                    )
+                    .textSelection(.enabled)
+            } else {
+                // Single line display
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(theme.textPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                            .strokeBorder(theme.border, lineWidth: 1)
+                    )
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// Formats customField keys like "_0.modelId" to "Model ID"
+    private func formatFieldKey(_ key: String) -> String {
+        var formatted = key
+        // Remove leading underscore and number prefix (e.g., "_0.")
+        if let range = formatted.range(of: "^_\\d+\\.", options: .regularExpression) {
+            formatted.removeSubrange(range)
+        }
+        // Convert camelCase to Title Case
+        formatted = formatted.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
+        // Capitalize first letter
+        return formatted.prefix(1).uppercased() + formatted.dropFirst()
     }
 
     // MARK: - Ports Section
