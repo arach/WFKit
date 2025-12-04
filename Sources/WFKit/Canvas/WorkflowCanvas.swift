@@ -69,6 +69,7 @@ public struct WorkflowCanvas: View {
     @State private var lastRightClickPosition: CGPoint = .zero
     @State private var isCapturingSnapshot: Bool = false
     @Environment(\.wfTheme) private var theme
+    @Environment(\.wfReadOnly) private var isReadOnly
 
     public init(state: CanvasState) {
         self.state = state
@@ -366,8 +367,8 @@ public struct WorkflowCanvas: View {
                     // Zoom controls
                     zoomControlsPanel
 
-                    // Selection actions (only when something selected)
-                    if state.hasSelection {
+                    // Selection actions (only when something selected, hidden in read-only mode)
+                    if state.hasSelection && !isReadOnly {
                         selectionActionsPanel
                     }
                 }
@@ -567,45 +568,50 @@ public struct WorkflowCanvas: View {
     // MARK: - Context Menu Items
 
     private func buildContextMenuItems() -> [WFMenuItem] {
-        let nodeSubmenu = NodeType.allCases.map { nodeType in
-            WFMenuItem(
-                label: nodeType.rawValue,
-                icon: nodeType.icon,
-                action: { [self] in
-                    state.addNode(type: nodeType, at: lastRightClickPosition)
-                }
-            )
-        }
+        var items: [WFMenuItem] = []
 
-        return [
-            WFMenuItem(label: "Add Node", icon: "plus.circle", submenu: nodeSubmenu),
-            .divider,
-            WFMenuItem(
+        // Add Node and Paste only available in edit mode
+        if !isReadOnly {
+            let nodeSubmenu = NodeType.allCases.map { nodeType in
+                WFMenuItem(
+                    label: nodeType.rawValue,
+                    icon: nodeType.icon,
+                    action: { [self] in
+                        state.addNode(type: nodeType, at: lastRightClickPosition)
+                    }
+                )
+            }
+            items.append(WFMenuItem(label: "Add Node", icon: "plus.circle", submenu: nodeSubmenu))
+            items.append(.divider)
+            items.append(WFMenuItem(
                 label: "Paste",
                 icon: "doc.on.clipboard",
                 shortcut: "⌘V",
                 isDisabled: !canPaste(),
                 action: { [self] in state.pasteNodes() }
-            ),
-            WFMenuItem(
-                label: "Select All",
-                icon: "checkmark.circle",
-                shortcut: "⌘A",
-                action: { [self] in state.selectAll() }
-            ),
-            .divider,
-            WFMenuItem(
-                label: "Zoom to Fit",
-                icon: "arrow.up.left.and.arrow.down.right",
-                shortcut: "⌘0",
-                action: { [self] in state.zoomToFit(in: canvasSize) }
-            ),
-            WFMenuItem(
-                label: "Reset View",
-                icon: "1.magnifyingglass",
-                action: { [self] in state.resetView() }
-            )
-        ]
+            ))
+        }
+
+        items.append(WFMenuItem(
+            label: "Select All",
+            icon: "checkmark.circle",
+            shortcut: "⌘A",
+            action: { [self] in state.selectAll() }
+        ))
+        items.append(.divider)
+        items.append(WFMenuItem(
+            label: "Zoom to Fit",
+            icon: "arrow.up.left.and.arrow.down.right",
+            shortcut: "⌘0",
+            action: { [self] in state.zoomToFit(in: canvasSize) }
+        ))
+        items.append(WFMenuItem(
+            label: "Reset View",
+            icon: "1.magnifyingglass",
+            action: { [self] in state.resetView() }
+        ))
+
+        return items
     }
 
     private func canPaste() -> Bool {
@@ -653,13 +659,20 @@ public struct WorkflowCanvas: View {
             if event.type == .keyDown && event.modifierFlags.contains(.command) {
                 switch event.charactersIgnoringModifiers?.lowercased() {
                 case "c":
+                    // Copy allowed in read-only (for debugging/sharing)
                     self.state.copySelectedNodes()
                     return nil
                 case "v":
-                    self.state.pasteNodes()
+                    // Paste disabled in read-only mode
+                    if !self.isReadOnly {
+                        self.state.pasteNodes()
+                    }
                     return nil
                 case "d":
-                    self.state.duplicateSelectedNodes()
+                    // Duplicate disabled in read-only mode
+                    if !self.isReadOnly {
+                        self.state.duplicateSelectedNodes()
+                    }
                     return nil
                 case "a":
                     self.state.selectAll()
@@ -899,11 +912,11 @@ public struct WorkflowCanvas: View {
                 isHovered: state.hoveredNodeId == node.id,
                 canvasState: state,
                 scale: state.scale,
-                onPortDragStart: { anchor in
+                onPortDragStart: isReadOnly ? nil : { anchor in
                     state.pendingConnection = PendingConnection(from: anchor)
                     state.updateValidDropPorts(for: anchor)
                 },
-                onPortDragUpdate: { canvasPoint in
+                onPortDragUpdate: isReadOnly ? nil : { canvasPoint in
                     let snapThreshold: CGFloat = 25
                     var snappedPoint = canvasPoint
                     var closestDistance: CGFloat = snapThreshold
@@ -933,7 +946,7 @@ public struct WorkflowCanvas: View {
                         }
                     }
                 },
-                onPortDragEnd: { targetAnchor in
+                onPortDragEnd: isReadOnly ? nil : { targetAnchor in
                     completePendingConnection(to: targetAnchor)
                 },
                 onPortHover: { portId in
@@ -990,6 +1003,8 @@ public struct WorkflowCanvas: View {
     private func nodeDragGesture(for node: WorkflowNode) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named("canvas"))
             .onChanged { value in
+                // Disable node dragging in read-only mode
+                guard !isReadOnly else { return }
                 guard !isPanMode else { return }
 
                 if !state.isDragging {
@@ -1139,6 +1154,9 @@ public struct WorkflowCanvas: View {
     }
 
     private func handleDelete() {
+        // Disable delete in read-only mode
+        guard !isReadOnly else { return }
+
         if let selectedConnectionId = state.selectedConnectionId {
             state.removeConnection(selectedConnectionId)
             state.deselectConnection()
