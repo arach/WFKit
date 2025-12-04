@@ -253,3 +253,39 @@ swift build && ./dev.sh
 1. Open debug toolbar (ant icon, bottom-right)
 2. Click "Snapshot" (camera icon)
 3. Find files in `~/Documents/WFKit-Snapshots/`
+
+---
+
+## Next Steps
+
+### Immediate: Talkie v1 Integration (Read-Only Viewer)
+
+The goal is to add a "View Workflow" button in Talkie that opens a WFKit canvas showing the current workflow visually.
+
+**In WFKit (do first):**
+1. Add `isReadOnly: Bool` parameter to `WFWorkflowEditor`
+2. When read-only: disable node dragging, hide inspector, disable connection creation
+3. Ensure WFKit builds as a clean library with no demo-app dependencies
+
+**In Talkie (`../talkie/MacOS/`):**
+1. Add WFKit as local package dependency in `Package.swift`:
+   ```swift
+   .package(path: "../WFKit")
+   ```
+2. Create `TalkieWorkflowConverter.swift` - converts `WorkflowDefinition` → `CanvasState`
+   - Each `WorkflowStep` → `WorkflowNode`
+   - Generate connections between sequential steps
+   - Auto-layout: horizontal positions at `x = 100 + index * 250`
+3. Add "View Workflow" button (eye icon) in workflow editor UI
+4. On tap: convert workflow, present sheet with `WFWorkflowEditor(state: converted, isReadOnly: true)`
+
+**Key files in Talkie:**
+- `Workflow/WorkflowDefinition.swift` - Source models
+- `Workflow/WorkflowViews.swift` - Add button here
+- Storage: `UserDefaults` key `"workflows_v2"`
+
+### Future: Editing Support
+After read-only works, consider:
+- Two-way sync between Talkie linear model and WFKit graph
+- Handle branching (WFKit allows, Talkie doesn't)
+- Extend Talkie to support non-linear workflows
