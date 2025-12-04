@@ -200,7 +200,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
     public var canvasBackgroundDarkHex: String {
         switch self {
         case .standard: return "0D0D0D"   // Dark grey
-        case .technical: return "000000"  // Pure black
+        case .technical: return "0F0F0F"  // Slightly off-black
         case .minimal: return "0A0A0A"    // Near pure black
         case .soft: return "0F0A0A"       // Very dark warm
         case .neon: return "050505"       // Near black (dark background for contrast)
@@ -251,12 +251,13 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         case circle
         case cross
         case plus
+        case lines    // Horizontal and vertical grid lines
     }
 
     public var gridDotStyle: GridDotStyle {
         switch self {
         case .standard: return .circle
-        case .technical: return .plus     // Technical crosshairs
+        case .technical: return .lines    // Blueprint-style line grid
         case .minimal: return .circle     // Clean simple dots
         case .soft: return .circle
         case .neon: return .circle

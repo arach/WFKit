@@ -13,6 +13,7 @@ public enum WFLogger {
         case gesture = "Gesture"
         case state = "State"
         case ui = "UI"
+        case hitTest = "HitTest"
     }
 
     /// Log levels
@@ -125,6 +126,15 @@ public enum WFLogger {
             message += "\n   After: \(after)"
         }
         debug(message, category: .state)
+    }
+
+    /// Log hit test events
+    public static func hitTest(_ event: String, details: String? = nil) {
+        var message = event
+        if let details = details {
+            message += "\n   \(details)"
+        }
+        debug(message, category: .hitTest)
     }
 }
 

@@ -105,8 +105,59 @@ public struct WFWorkflowEditor: View {
             // Debug toolbar overlay - positioned at bottom-right of entire window
             if showDebugToolbar && !isCapturingSnapshot {
                 debugToolbar
+                    .padding(.bottom, statusBarHeight) // Account for status bar
             }
             #endif
+
+            // Status bar overlay at bottom
+            statusBar
+        }
+    }
+
+    // MARK: - Status Bar
+
+    private var statusBar: some View {
+        VStack {
+            Spacer()
+            HStack {
+                // Node and connection counts
+                HStack(spacing: 16) {
+                    HStack(spacing: 6) {
+                        Text("Nodes:")
+                            .foregroundColor(theme.textTertiary)
+                        Text("\(state.nodes.count)")
+                            .foregroundColor(theme.textSecondary)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("Connections:")
+                            .foregroundColor(theme.textTertiary)
+                        Text("\(state.connections.count)")
+                            .foregroundColor(theme.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                // Ready status
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 6, height: 6)
+                    Text("Ready")
+                        .foregroundColor(theme.textSecondary)
+                }
+            }
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(theme.panelBackground.opacity(0.95))
+            .overlay(
+                Rectangle()
+                    .fill(theme.border)
+                    .frame(height: 1),
+                alignment: .top
+            )
         }
     }
 
@@ -343,10 +394,16 @@ public struct WFWorkflowEditor: View {
 
     // MARK: - Layout Variants
 
+    /// Height of the status bar at the bottom
+    private let statusBarHeight: CGFloat = 30
+
     /// Canvas with system .inspector() modifier - requires WindowGroup
     @ViewBuilder
     private var systemInspectorLayout: some View {
         WorkflowCanvas(state: state)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: statusBarHeight)
+            }
             .inspector(isPresented: $showInspector) {
                 InspectorView(state: state, isVisible: $showInspector)
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 400)
@@ -358,6 +415,9 @@ public struct WFWorkflowEditor: View {
     private var inlineInspectorLayout: some View {
         HStack(spacing: 0) {
             WorkflowCanvas(state: state)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: statusBarHeight)
+                }
 
             if showInspector {
                 Rectangle()
@@ -374,6 +434,9 @@ public struct WFWorkflowEditor: View {
     @ViewBuilder
     private var canvasOnly: some View {
         WorkflowCanvas(state: state)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: statusBarHeight)
+            }
     }
 }
 

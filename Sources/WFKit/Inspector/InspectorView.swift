@@ -5,7 +5,7 @@ import SwiftUI
 public struct InspectorView: View {
     @Bindable var state: CanvasState
     @Binding var isVisible: Bool
-    @State private var expandedSections: Set<String> = ["node", "config", "details"]
+    @State private var expandedSections: Set<String> = ["node", "config", "details", "connection"]
     @Environment(\.wfTheme) private var theme
     @Environment(\.wfReadOnly) private var isReadOnly
     @Environment(\.wfSchema) private var schema
@@ -23,7 +23,24 @@ public struct InspectorView: View {
                 .fill(theme.border)
                 .frame(height: 1)
 
-            if let node = state.singleSelectedNode {
+            if let connectionId = state.selectedConnectionId,
+               let connection = state.connections.first(where: { $0.id == connectionId }) {
+                // Connection selected - show connection inspector
+                ScrollView {
+                    VStack(spacing: 0) {
+                        InspectorSection(
+                            title: "CONNECTION",
+                            icon: "arrow.right",
+                            id: "connection",
+                            expandedSections: $expandedSections
+                        ) {
+                            connectionSection(connection)
+                        }
+                    }
+                    .padding(.vertical, 12)
+                }
+                .scrollIndicators(.visible)
+            } else if let node = state.singleSelectedNode {
                 ScrollView {
                     VStack(spacing: 0) {
                         // NODE: Identity, style, position
@@ -59,6 +76,19 @@ public struct InspectorView: View {
                                 customFieldsSection(customFields)
                             }
                         }
+
+                        // RELATED: Show connected nodes
+                        let connected = state.connectedNodes(for: node.id)
+                        if !connected.upstream.isEmpty || !connected.downstream.isEmpty {
+                            InspectorSection(
+                                title: "RELATED",
+                                icon: "point.3.connected.trianglepath.dotted",
+                                id: "related",
+                                expandedSections: $expandedSections
+                            ) {
+                                relatedNodesSection(upstream: connected.upstream, downstream: connected.downstream)
+                            }
+                        }
                     }
                     .padding(.vertical, 12)
                 }
@@ -78,26 +108,56 @@ public struct InspectorView: View {
 
     @ViewBuilder
     private var inspectorHeader: some View {
-        HStack(spacing: 8) {
-            Text("INSPECTOR")
-                .font(.system(size: 10, weight: .bold, design: .default))
-                .tracking(1.2)
-                .foregroundColor(theme.textSecondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("INSPECTOR")
+                    .font(.system(size: 10, weight: .bold, design: .default))
+                    .tracking(1.2)
+                    .foregroundColor(theme.textSecondary)
 
-            Spacer()
+                Spacer()
 
-            Button(action: { isVisible = false }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(theme.textTertiary)
+                Button(action: { isVisible = false }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(theme.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+                .background(theme.sectionBackground)
+                .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
             }
-            .buttonStyle(.plain)
-            .padding(6)
-            .background(theme.sectionBackground)
-            .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+
+            // Back button when there's history
+            if let previousInfo = state.previousItemInfo() {
+                Button(action: { state.navigateBack() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 9, weight: .bold))
+
+                        Image(systemName: previousInfo.icon)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 16, height: 16)
+                            .background(previousInfo.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                        Text(previousInfo.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+
+                        Spacer()
+                    }
+                    .foregroundColor(theme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.accent.opacity(0.08))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
         .background(theme.sectionBackground)
     }
 
@@ -661,6 +721,255 @@ public struct InspectorView: View {
             .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
     }
 
+    // MARK: - Related Nodes Section
+
+    @ViewBuilder
+    private func relatedNodesSection(upstream: [WorkflowNode], downstream: [WorkflowNode]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Upstream nodes (inputs to this node)
+            if !upstream.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 9))
+                            .foregroundColor(theme.textTertiary)
+                        Text("INPUTS FROM")
+                            .font(.system(size: 9, weight: .semibold, design: .default))
+                            .tracking(0.5)
+                            .foregroundColor(theme.textTertiary)
+                    }
+
+                    ForEach(upstream) { node in
+                        relatedNodeRow(node, direction: .upstream)
+                    }
+                }
+            }
+
+            // Downstream nodes (outputs from this node)
+            if !downstream.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.to.line")
+                            .font(.system(size: 9))
+                            .foregroundColor(theme.textTertiary)
+                        Text("OUTPUTS TO")
+                            .font(.system(size: 9, weight: .semibold, design: .default))
+                            .tracking(0.5)
+                            .foregroundColor(theme.textTertiary)
+                    }
+
+                    ForEach(downstream) { node in
+                        relatedNodeRow(node, direction: .downstream)
+                    }
+                }
+            }
+        }
+    }
+
+    private enum ConnectionDirection {
+        case upstream
+        case downstream
+    }
+
+    @ViewBuilder
+    private func relatedNodeRow(_ node: WorkflowNode, direction: ConnectionDirection) -> some View {
+        Button(action: {
+            state.navigateToNode(node.id)
+        }) {
+            HStack(spacing: 10) {
+                // Direction arrow
+                Image(systemName: direction == .upstream ? "arrow.left" : "arrow.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(theme.textTertiary)
+                    .frame(width: 12)
+
+                // Node icon
+                Image(systemName: node.type.icon)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+                    .background(node.effectiveColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                // Node title
+                Text(node.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(theme.textPrimary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                // Chevron to indicate clickable
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(theme.textTertiary)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(theme.inputBackground)
+            .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+            .overlay(
+                RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Connection Section
+
+    @ViewBuilder
+    private func connectionNodeRow(node: WorkflowNode, port: Port?) -> some View {
+        Button(action: {
+            state.navigateToNode(node.id)
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: node.type.icon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(node.effectiveColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(theme.textPrimary)
+                    if let port = port {
+                        Text("Port: \(port.label)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(theme.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(theme.textTertiary)
+            }
+            .padding(10)
+            .background(theme.inputBackground)
+            .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+            .overlay(
+                RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func connectionSection(_ connection: WorkflowConnection) -> some View {
+        let sourceNode = state.nodes.first { $0.id == connection.sourceNodeId }
+        let targetNode = state.nodes.first { $0.id == connection.targetNodeId }
+        let sourcePort = sourceNode?.outputs.first { $0.id == connection.sourcePortId }
+        let targetPort = targetNode?.inputs.first { $0.id == connection.targetPortId }
+
+        VStack(alignment: .leading, spacing: 16) {
+            // Source node info
+            VStack(alignment: .leading, spacing: 8) {
+                Text("FROM")
+                    .font(.system(size: 9, weight: .semibold, design: .default))
+                    .tracking(0.5)
+                    .foregroundColor(theme.textTertiary)
+
+                if let node = sourceNode {
+                    connectionNodeRow(node: node, port: sourcePort)
+                } else {
+                    HStack(spacing: 10) {
+                        Text("Unknown node")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textTertiary)
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+                }
+            }
+
+            // Break link action (between FROM and TO) - subtle disconnect button
+            if !isReadOnly {
+                HStack {
+                    Spacer()
+                    BreakLinkButton {
+                        state.removeConnection(connection.id)
+                        state.deselectConnection()
+                    }
+                    Spacer()
+                }
+            } else {
+                // Read-only: just show arrow
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(theme.textTertiary)
+                    Spacer()
+                }
+            }
+
+            // Target node info
+            VStack(alignment: .leading, spacing: 8) {
+                Text("TO")
+                    .font(.system(size: 9, weight: .semibold, design: .default))
+                    .tracking(0.5)
+                    .foregroundColor(theme.textTertiary)
+
+                if let node = targetNode {
+                    connectionNodeRow(node: node, port: targetPort)
+                } else {
+                    HStack(spacing: 10) {
+                        Text("Unknown node")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textTertiary)
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+                }
+            }
+
+            // Waypoints info
+            if !connection.waypoints.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("WAYPOINTS")
+                        .font(.system(size: 9, weight: .semibold, design: .default))
+                        .tracking(0.5)
+                        .foregroundColor(theme.textTertiary)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.accent)
+
+                        Text("\(connection.waypoints.count) custom point\(connection.waypoints.count == 1 ? "" : "s")")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textSecondary)
+
+                        Spacer()
+
+                        if !isReadOnly {
+                            Button(action: {
+                                state.clearSelectedConnectionWaypoints()
+                            }) {
+                                Text("Reset")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(10)
+                    .background(theme.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+                }
+            }
+        }
+    }
+
     // MARK: - Custom Fields Section (Schema-Aware Display)
 
     @ViewBuilder
@@ -988,14 +1297,18 @@ public struct InspectorView: View {
             Spacer()
 
             if !connections.isEmpty {
-                // Show connection count badge
-                Text("\(connections.count)")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundColor(theme.textTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(theme.panelBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                // Show connection count badge - clickable to select connection
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("\(connections.count)")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                }
+                .foregroundColor(theme.accent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.accent.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
             } else if isValidTarget {
                 // This port is a valid drop target
                 Image(systemName: "plus.circle.fill")
@@ -1029,6 +1342,11 @@ public struct InspectorView: View {
             if isValidTarget {
                 // Complete connection to this port
                 state.completeConnection(to: nodeId, targetPortId: port.id, isInput: isInput)
+            } else if !connections.isEmpty {
+                // Select the first connection on this port
+                let connection = connections[0]
+                state.clearSelection()
+                state.selectConnection(connection.id)
             } else if connections.isEmpty && !state.isConnecting {
                 // Start connection from this port
                 state.startConnectionFromPort(nodeId: nodeId, portId: port.id, isInput: isInput)
@@ -1453,5 +1771,35 @@ struct ColorPickerButton: View {
             .padding(10)
             .background(theme.panelBackground)
         }
+    }
+}
+
+// MARK: - Break Link Button
+
+/// A very subtle button for breaking/disconnecting a connection
+private struct BreakLinkButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+    @Environment(\.wfTheme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            // Simple small "x" to indicate disconnect
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(isHovered ? theme.error.opacity(0.8) : theme.textTertiary.opacity(0.4))
+                .frame(width: 16, height: 16)
+                .background(
+                    Circle()
+                        .fill(isHovered ? theme.error.opacity(0.1) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .help("Disconnect")
     }
 }

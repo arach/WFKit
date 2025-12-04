@@ -159,6 +159,18 @@ public final class CanvasState {
     public var selectedConnectionId: UUID? = nil
     public var hoveredConnectionId: UUID? = nil
 
+    // MARK: - Inspector Navigation History (for back button)
+
+    /// Represents an item that can be navigated to in the inspector
+    public enum InspectorItem: Equatable {
+        case node(UUID)
+        case connection(UUID)
+    }
+
+    /// The previous item before the current selection (for "back" navigation)
+    public var previousInspectorItem: InspectorItem? = nil
+
+
     // MARK: - Connection State
     public var pendingConnection: PendingConnection? = nil
     public var hoveredPortId: UUID? = nil
@@ -603,6 +615,195 @@ public final class CanvasState {
 
     public func deselectConnection() {
         selectedConnectionId = nil
+    }
+
+    // MARK: - Inspector Navigation (with history)
+
+    /// Get the current inspector item
+    public var currentInspectorItem: InspectorItem? {
+        if let connectionId = selectedConnectionId {
+            return .connection(connectionId)
+        } else if selectedNodeIds.count == 1, let nodeId = selectedNodeIds.first {
+            return .node(nodeId)
+        }
+        return nil
+    }
+
+    /// Navigate to a node from inspector (tracks history)
+    public func navigateToNode(_ id: UUID) {
+        // Save current item as previous (for back navigation)
+        previousInspectorItem = currentInspectorItem
+
+        // Select the node
+        selectedConnectionId = nil
+        selectedNodeIds = [id]
+    }
+
+    /// Navigate to a connection from inspector (tracks history)
+    public func navigateToConnection(_ id: UUID) {
+        // Save current item as previous (for back navigation)
+        previousInspectorItem = currentInspectorItem
+
+        // Select the connection
+        selectedNodeIds.removeAll()
+        selectedConnectionId = id
+    }
+
+    /// Navigate back to previous inspector item
+    public func navigateBack() {
+        guard let previous = previousInspectorItem else { return }
+
+        // Clear the previous (no more back after this)
+        previousInspectorItem = nil
+
+        // Navigate to the previous item (without tracking history)
+        switch previous {
+        case .node(let nodeId):
+            selectedConnectionId = nil
+            selectedNodeIds = [nodeId]
+        case .connection(let connectionId):
+            selectedNodeIds.removeAll()
+            selectedConnectionId = connectionId
+        }
+    }
+
+    /// Get display info for the previous item (for back button label)
+    public func previousItemInfo() -> (icon: String, title: String, color: Color)? {
+        guard let previous = previousInspectorItem else { return nil }
+
+        switch previous {
+        case .node(let nodeId):
+            guard let node = nodes.first(where: { $0.id == nodeId }) else { return nil }
+            return (node.type.icon, node.title, node.effectiveColor)
+        case .connection:
+            return ("arrow.right", "Connection", Color.blue)
+        }
+    }
+
+    // MARK: - Related Nodes (for Inspector)
+
+    /// Get nodes that connect TO this node (upstream/input nodes)
+    public func upstreamNodes(for nodeId: UUID) -> [WorkflowNode] {
+        let sourceNodeIds = connections
+            .filter { $0.targetNodeId == nodeId }
+            .map { $0.sourceNodeId }
+        return nodes.filter { sourceNodeIds.contains($0.id) }
+    }
+
+    /// Get nodes that this node connects TO (downstream/output nodes)
+    public func downstreamNodes(for nodeId: UUID) -> [WorkflowNode] {
+        let targetNodeIds = connections
+            .filter { $0.sourceNodeId == nodeId }
+            .map { $0.targetNodeId }
+        return nodes.filter { targetNodeIds.contains($0.id) }
+    }
+
+    /// Get all connected nodes (both upstream and downstream)
+    public func connectedNodes(for nodeId: UUID) -> (upstream: [WorkflowNode], downstream: [WorkflowNode]) {
+        return (upstreamNodes(for: nodeId), downstreamNodes(for: nodeId))
+    }
+
+    /// Live routing drag offset for real-time preview while dragging the middle handle
+    /// This is applied to the obstacle avoidance path during drag
+    public var routingDragOffset: CGSize = .zero
+
+    /// Whether a routing drag is in progress
+    public var isRoutingDrag: Bool = false
+
+    /// Live waypoint position during drag preview (Google Maps-style path editing)
+    public var liveWaypoint: CGPoint? = nil
+
+    /// Whether a waypoint drag is in progress
+    public var isWaypointDrag: Bool = false
+
+    /// Cycle the routing preference of the selected connection
+    public func cycleSelectedConnectionRouting() {
+        guard let connectionId = selectedConnectionId,
+              let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            return
+        }
+        connections[index].routingPreference.cycle()
+    }
+
+    /// Set a specific routing preference for the selected connection
+    public func setSelectedConnectionRouting(_ preference: WFRoutingPreference) {
+        guard let connectionId = selectedConnectionId,
+              let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            WFLogger.warning("setSelectedConnectionRouting: No connection selected or not found", category: .connection)
+            return
+        }
+        let oldPreference = connections[index].routingPreference
+        guard oldPreference != preference else {
+            WFLogger.debug("Routing preference unchanged: \(preference)", category: .connection)
+            return
+        }
+        // Create a new connection with updated routing to ensure SwiftUI detects the change
+        var updatedConnection = connections[index]
+        updatedConnection.routingPreference = preference
+        connections[index] = updatedConnection
+        WFLogger.info("Connection routing changed: \(oldPreference) -> \(preference)", category: .connection)
+    }
+
+    // MARK: - Waypoint Management
+
+    /// Add a waypoint to the selected connection
+    public func addWaypointToSelectedConnection(at position: CGPoint) {
+        guard let connectionId = selectedConnectionId,
+              let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            WFLogger.warning("addWaypointToSelectedConnection: No connection selected", category: .connection)
+            return
+        }
+        saveSnapshot()
+        var updatedConnection = connections[index]
+        updatedConnection.addWaypoint(at: position)
+        connections[index] = updatedConnection
+        WFLogger.info("Added waypoint to connection at \(position)", category: .connection)
+    }
+
+    /// Clear all waypoints from the selected connection
+    public func clearSelectedConnectionWaypoints() {
+        guard let connectionId = selectedConnectionId,
+              let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            WFLogger.warning("clearSelectedConnectionWaypoints: No connection selected", category: .connection)
+            return
+        }
+        guard !connections[index].waypoints.isEmpty else { return }
+        saveSnapshot()
+        var updatedConnection = connections[index]
+        updatedConnection.clearWaypoints()
+        connections[index] = updatedConnection
+        WFLogger.info("Cleared waypoints from connection", category: .connection)
+    }
+
+    /// Update a waypoint's position on the selected connection
+    public func updateSelectedConnectionWaypoint(at waypointIndex: Int, position: CGPoint) {
+        guard let connectionId = selectedConnectionId,
+              let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            return
+        }
+        var updatedConnection = connections[index]
+        updatedConnection.updateWaypoint(at: waypointIndex, position: position)
+        connections[index] = updatedConnection
+    }
+
+    /// Start a waypoint drag - sets the live waypoint for preview
+    public func startWaypointDrag(at position: CGPoint) {
+        isWaypointDrag = true
+        liveWaypoint = position
+    }
+
+    /// Update the live waypoint during drag
+    public func updateLiveWaypoint(to position: CGPoint) {
+        liveWaypoint = position
+    }
+
+    /// End a waypoint drag and optionally commit the waypoint
+    public func endWaypointDrag(commit: Bool) {
+        if commit, let position = liveWaypoint {
+            addWaypointToSelectedConnection(at: position)
+        }
+        isWaypointDrag = false
+        liveWaypoint = nil
     }
 
     // MARK: - Connection Operations
@@ -1094,8 +1295,8 @@ public final class CanvasState {
             }
         }
 
-        // Port not found - log details for debugging
-        WFLogger.warning("portPosition: Port not found - nodeId=\(nodeId.uuidString.prefix(8)), portId=\(portId.uuidString.prefix(8)), nodeTitle=\(node.title), inputPorts=[\(node.inputs.map { $0.id.uuidString.prefix(8) }.joined(separator: ", "))], outputPorts=[\(node.outputs.map { $0.id.uuidString.prefix(8) }.joined(separator: ", "))]", category: .connection)
+        // Port not found - expected case when looking up connections, no need to log
+        // (This happens frequently when searching for ports across all nodes)
         return nil
     }
 

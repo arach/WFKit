@@ -618,6 +618,7 @@ struct PortView: View {
     @State private var pulsePhase: CGFloat = 0
     @Environment(\.wfTheme) private var theme
     @Environment(\.wfReadOnly) private var isReadOnly
+    @Environment(\.wfLayoutMode) private var layoutMode
 
     private let portSize: CGFloat = 12
 
@@ -647,18 +648,35 @@ struct PortView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
-                if !port.isInput {
-                    Spacer()
-                }
+            if layoutMode == .vertical {
+                // Vertical mode: center ports horizontally
+                VStack(spacing: 0) {
+                    if !port.isInput {
+                        Spacer()
+                    }
 
-                portCircle
+                    portCircle
 
-                if port.isInput {
-                    Spacer()
+                    if port.isInput {
+                        Spacer()
+                    }
                 }
+                .frame(maxWidth: .infinity)
+            } else {
+                // Freeform mode: ports on left/right edges
+                HStack(spacing: 0) {
+                    if !port.isInput {
+                        Spacer()
+                    }
+
+                    portCircle
+
+                    if port.isInput {
+                        Spacer()
+                    }
+                }
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
         }
     }
 

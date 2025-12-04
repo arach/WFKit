@@ -61,6 +61,16 @@ private struct HoverableOverlayButton<Content: View>: View {
 
 // MARK: - Workflow Canvas View
 
+// MARK: - Cursor State
+
+enum CanvasCursorState {
+    case `default`
+    case pan           // Hand cursor - panning mode (space held)
+    case move          // Move cursor - dragging nodes
+    case pointer       // Arrow pointer - hovering over selectable items
+    case connecting    // Crosshair - creating connections
+}
+
 public struct WorkflowCanvas: View {
     @Bindable var state: CanvasState
     @State private var draggedNodeId: UUID?
@@ -77,11 +87,39 @@ public struct WorkflowCanvas: View {
     @State private var contextMenuState = WFContextMenuState()
     @State private var rightClickMonitor: Any?
     @State private var lastRightClickPosition: CGPoint = .zero
+    @State private var cursorState: CanvasCursorState = .default
     @Environment(\.wfTheme) private var theme
     @Environment(\.wfReadOnly) private var isReadOnly
 
     public init(state: CanvasState) {
         self.state = state
+    }
+
+    // MARK: - Cursor Management
+
+    private func updateCursor(_ newState: CanvasCursorState) {
+        guard cursorState != newState else { return }
+
+        // Pop old cursor if we pushed one
+        if cursorState != .default {
+            NSCursor.pop()
+        }
+
+        cursorState = newState
+
+        // Push new cursor
+        switch newState {
+        case .default:
+            break // No cursor to push for default
+        case .pan:
+            NSCursor.openHand.push()
+        case .move:
+            NSCursor.crosshair.push()
+        case .pointer:
+            NSCursor.pointingHand.push()
+        case .connecting:
+            NSCursor.crosshair.push()
+        }
     }
 
     public var body: some View {
@@ -126,11 +164,15 @@ public struct WorkflowCanvas: View {
                 .simultaneousGesture(backgroundPanGesture())
                 .simultaneousGesture(magnificationGesture)
                 .onTapGesture {
+                    // Log the background tap with debugging info
+                    handleBackgroundTap()
+
                     // Cancel connection mode if active
                     if state.isConnecting {
                         state.cancelPendingConnection()
                     } else {
                         state.clearSelection()
+                        state.deselectConnection()
                     }
                     isFocused = true
                 }
@@ -203,8 +245,12 @@ public struct WorkflowCanvas: View {
                     // Zoom controls
                     zoomControlsPanel
 
-                    // Selection actions (only when something selected, hidden in read-only mode)
-                    if state.hasSelection && !isReadOnly {
+                    // Connection actions (when connection selected)
+                    if state.selectedConnectionId != nil && !isReadOnly {
+                        connectionActionsPanel
+                    }
+                    // Node selection actions (only when nodes selected, hidden in read-only mode)
+                    else if state.hasSelection && !isReadOnly {
                         selectionActionsPanel
                     }
                 }
@@ -312,6 +358,108 @@ public struct WorkflowCanvas: View {
         .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 2)
         .transition(.opacity.combined(with: .scale(scale: 0.95)))
         .animation(.easeInOut(duration: 0.15), value: state.hasSelection)
+    }
+
+    /// Get the currently selected connection
+    private var selectedConnection: WorkflowConnection? {
+        guard let id = state.selectedConnectionId else { return nil }
+        return state.connections.first { $0.id == id }
+    }
+
+    @ViewBuilder
+    private var connectionActionsPanel: some View {
+        if let connection = selectedConnection {
+            HStack(spacing: 0) {
+                // Connection badge with waypoint count
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("1")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    Text("path")
+                        .font(.system(size: 11, weight: .medium))
+                    if !connection.waypoints.isEmpty {
+                        Text("•")
+                            .font(.system(size: 8))
+                            .foregroundColor(theme.accent)
+                        Text("\(connection.waypoints.count)")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundColor(theme.accent)
+                    }
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(theme.accent.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: max(theme.panelRadius - 2, 2)))
+
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 6)
+
+                // Clear waypoints button (only show if waypoints exist)
+                if !connection.waypoints.isEmpty {
+                    HoverableOverlayButton(action: {
+                        state.clearSelectedConnectionWaypoints()
+                    }) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 28, height: 28)
+                    }
+                    .foregroundColor(theme.textSecondary)
+                    .help("Reset path")
+
+                    Divider()
+                        .frame(height: 16)
+                        .padding(.horizontal, 6)
+                }
+
+                // Delete button
+                HoverableOverlayButton(isDestructive: true, action: {
+                    if let id = state.selectedConnectionId {
+                        state.removeConnection(id)
+                        state.deselectConnection()
+                    }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 32, height: 28)
+                }
+                .foregroundColor(theme.error.opacity(0.85))
+                .help("Delete (⌫)")
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 2)
+            .padding(.vertical, 2)
+            .background(theme.panelBackground.opacity(0.95))
+            .clipShape(RoundedRectangle(cornerRadius: theme.panelRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.panelRadius)
+                    .strokeBorder(theme.border.opacity(0.5), lineWidth: 0.5)
+            )
+            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 2)
+            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .animation(.easeInOut(duration: 0.15), value: state.selectedConnectionId)
+        }
+    }
+
+    @ViewBuilder
+    private func routingButton(icon: String, preference: WFRoutingPreference, current: WFRoutingPreference, tooltip: String) -> some View {
+        let isSelected = preference == current
+        Button(action: {
+            state.setSelectedConnectionRouting(preference)
+        }) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 26, height: 24)
+                .foregroundColor(isSelected ? .white : theme.textSecondary)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isSelected ? theme.accent : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(tooltip)
     }
 
     @ViewBuilder
@@ -484,11 +632,20 @@ public struct WorkflowCanvas: View {
                 if event.type == .keyDown && !self.isSpacePressed {
                     self.isSpacePressed = true
                     self.isPanMode = true
-                    NSCursor.openHand.push()
+                    self.updateCursor(.pan)
                 } else if event.type == .keyUp && self.isSpacePressed {
                     self.isSpacePressed = false
                     self.isPanMode = false
-                    NSCursor.pop()
+                    // Restore cursor based on current state
+                    if self.state.isDragging {
+                        self.updateCursor(.move)
+                    } else if self.state.hoveredNodeId != nil || self.state.hoveredConnectionId != nil {
+                        self.updateCursor(.pointer)
+                    } else if self.state.isConnecting {
+                        self.updateCursor(.connecting)
+                    } else {
+                        self.updateCursor(.default)
+                    }
                 }
             }
 
@@ -584,11 +741,13 @@ public struct WorkflowCanvas: View {
             NSEvent.removeMonitor(monitor)
             rightClickMonitor = nil
         }
-        if isPanMode {
+        // Reset cursor state
+        if cursorState != .default {
             NSCursor.pop()
-            isPanMode = false
-            isSpacePressed = false
+            cursorState = .default
         }
+        isPanMode = false
+        isSpacePressed = false
     }
 
     private func handleScrollWheel(event: NSEvent) {
@@ -700,8 +859,18 @@ public struct WorkflowCanvas: View {
                 let srcColor: Color? = theme.useOutlineStyle ? nil : sourceNode?.type.color
                 let tgtColor: Color? = theme.useOutlineStyle ? nil : targetNode?.type.color
 
+                // Calculate obstacles (other nodes' bounding boxes, excluding source and target)
+                let obstacles = state.nodes
+                    .filter { $0.id != connection.sourceNodeId && $0.id != connection.targetNodeId }
+                    .map { CGRect(origin: $0.position, size: $0.size) }
+
                 // Only render the connection line if NOT being reconnected
                 if !isBeingReconnected {
+                    // Pass drag offset only for the selected connection during routing drag
+                    let dragOffset = (isSelected && state.isRoutingDrag) ? state.routingDragOffset : .zero
+                    // Pass live waypoint only for the selected connection during waypoint drag
+                    let liveWaypoint = (isSelected && state.isWaypointDrag) ? state.liveWaypoint : nil
+
                     ConnectionView(
                         from: startPos,
                         to: endPos,
@@ -710,15 +879,26 @@ public struct WorkflowCanvas: View {
                         targetColor: tgtColor,
                         isSelected: isSelected,
                         isHovered: isHovered,
-                        curveStyle: theme.connectionStyle
+                        curveStyle: theme.connectionStyle,
+                        obstacles: obstacles,
+                        routingPreference: connection.routingPreference,
+                        routingDragOffset: dragOffset,
+                        waypoints: connection.waypoints,
+                        liveWaypoint: liveWaypoint
                     )
-                    .contentShape(ConnectionHitShape(from: startPos, to: endPos, tolerance: 10))
+                    .contentShape(ConnectionHitShape(from: startPos, to: endPos, tolerance: 40, layoutMode: state.layoutMode))
                     .onTapGesture {
                         handleConnectionTap(connection)
                     }
                     .onHover { hovering in
-                        if !state.isDragging && state.pendingConnection == nil {
+                        if !state.isDragging && state.pendingConnection == nil && !isPanMode {
                             state.hoveredConnectionId = hovering ? connection.id : nil
+                            // Update cursor - pointer for hovering connections
+                            if hovering {
+                                updateCursor(.pointer)
+                            } else if state.hoveredNodeId == nil && !state.isConnecting {
+                                updateCursor(.default)
+                            }
                         }
                     }
                     .contextMenu {
@@ -752,6 +932,30 @@ public struct WorkflowCanvas: View {
                         onReconnectionUpdate: handleReconnectionUpdate,
                         onReconnectionEnd: handleReconnectionEnd
                     )
+
+                    // Middle handle for adding/moving waypoints (show for all selected connections)
+                    if !isBeingReconnected && isSelected && !isReadOnly {
+                        // Show middle handle for dragging to add a waypoint
+                        ConnectionMiddleHandle(
+                            startPos: startPos,
+                            endPos: endPos,
+                            color: srcColor ?? connectionColor,
+                            connection: connection,
+                            canvasState: state,
+                            layoutMode: state.layoutMode
+                        )
+
+                        // Show handles for existing waypoints
+                        ForEach(Array(connection.waypoints.enumerated()), id: \.offset) { index, waypoint in
+                            WaypointHandle(
+                                position: waypoint.position,
+                                color: srcColor ?? connectionColor,
+                                waypointIndex: index,
+                                connection: connection,
+                                canvasState: state
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -827,8 +1031,14 @@ public struct WorkflowCanvas: View {
                 handleNodeTap(node)
             }
             .onHover { isHovered in
-                if !state.isDragging {
+                if !state.isDragging && !isPanMode {
                     state.hoveredNodeId = isHovered ? node.id : nil
+                    // Update cursor - pointer for hovering nodes
+                    if isHovered {
+                        updateCursor(.pointer)
+                    } else if state.hoveredConnectionId == nil && !state.isConnecting {
+                        updateCursor(.default)
+                    }
                 }
             }
             .position(
@@ -877,6 +1087,8 @@ public struct WorkflowCanvas: View {
                     state.beginNodeMove()
                     draggedNodeId = node.id
                     dragStartLocation = value.startLocation
+                    // Show move cursor when dragging
+                    updateCursor(.move)
 
                     if !state.selectedNodeIds.contains(node.id) {
                         state.selectNode(node.id, exclusive: true)
@@ -895,6 +1107,8 @@ public struct WorkflowCanvas: View {
                 state.isDragging = false
                 draggedNodeId = nil
                 dragStartLocation = nil
+                // Reset cursor after dragging
+                updateCursor(.default)
 
                 // Snap to grid if enabled (shift temporarily disables)
                 if theme.snapToGrid && !NSEvent.modifierFlags.contains(.shift) {
@@ -910,6 +1124,21 @@ public struct WorkflowCanvas: View {
     }
 
     private func handleArrowKey(direction: ArrowDirection) {
+        // If a connection is selected, arrow keys cycle the routing preference
+        if let connectionId = state.selectedConnectionId {
+            // Left/Up = primary, Right/Down = secondary
+            let newPreference: WFRoutingPreference
+            switch direction {
+            case .left, .up:
+                newPreference = .primary
+            case .right, .down:
+                newPreference = .secondary
+            }
+            WFLogger.info("Setting routing preference to \(newPreference) for connection \(connectionId.uuidString.prefix(8))", category: .canvas)
+            state.setSelectedConnectionRouting(newPreference)
+            return
+        }
+
         guard state.hasSelection else { return }
 
         let modifiers = NSEvent.modifierFlags
@@ -939,6 +1168,9 @@ public struct WorkflowCanvas: View {
     }
 
     private func handleNodeTap(_ node: WorkflowNode) {
+        let nodeRect = CGRect(origin: node.position, size: node.size)
+        WFLogger.hitTest("✓ NODE TAP: \(node.title)", details: "id=\(node.id.uuidString.prefix(8)), type=\(node.type.rawValue), frame=\(Int(nodeRect.minX)),\(Int(nodeRect.minY)) \(Int(nodeRect.width))×\(Int(nodeRect.height))")
+
         if NSEvent.modifierFlags.contains(.command) {
             state.toggleNodeSelection(node.id)
         } else if NSEvent.modifierFlags.contains(.shift) {
@@ -973,6 +1205,19 @@ public struct WorkflowCanvas: View {
     }
 
     private func handleConnectionTap(_ connection: WorkflowConnection) {
+        // Get source and target info for logging
+        let sourceNode = state.nodes.first { $0.id == connection.sourceNodeId }
+        let targetNode = state.nodes.first { $0.id == connection.targetNodeId }
+        let sourceLabel = sourceNode?.title ?? "?"
+        let targetLabel = targetNode?.title ?? "?"
+
+        // Get positions
+        let startPos = state.portPosition(nodeId: connection.sourceNodeId, portId: connection.sourcePortId) ?? .zero
+        let endPos = state.portPosition(nodeId: connection.targetNodeId, portId: connection.targetPortId) ?? .zero
+
+        WFLogger.hitTest("✓ CONNECTION TAP: \(sourceLabel) → \(targetLabel)",
+            details: "id=\(connection.id.uuidString.prefix(8)), from=\(Int(startPos.x)),\(Int(startPos.y)) to=\(Int(endPos.x)),\(Int(endPos.y)), tolerance=40")
+
         state.selectConnection(connection.id)
     }
 
@@ -1029,6 +1274,156 @@ public struct WorkflowCanvas: View {
             state.removeSelectedNodes()
         }
     }
+
+    // MARK: - Hit Test Debugging
+
+    /// Handle background tap with logging of nearby objects
+    private func handleBackgroundTap() {
+        // Get mouse location from NSEvent
+        guard let window = NSApp.keyWindow,
+              let contentView = window.contentView else {
+            WFLogger.hitTest("✗ BACKGROUND TAP (no window)")
+            return
+        }
+
+        let mouseInWindow = window.mouseLocationOutsideOfEventStream
+        let mouseInView = contentView.convert(mouseInWindow, from: nil)
+        let flippedY = contentView.bounds.height - mouseInView.y
+
+        // Convert to canvas coordinates
+        let toolbarHeight: CGFloat = 34
+        let canvasPoint = CGPoint(
+            x: (mouseInView.x - state.offset.width) / state.scale,
+            y: (flippedY - toolbarHeight - state.offset.height) / state.scale
+        )
+
+        // Calculate distances to all connections
+        var connectionDistances: [(String, CGFloat)] = []
+        for connection in state.connections {
+            guard let startPos = state.portPosition(nodeId: connection.sourceNodeId, portId: connection.sourcePortId),
+                  let endPos = state.portPosition(nodeId: connection.targetNodeId, portId: connection.targetPortId) else {
+                continue
+            }
+
+            let sourceNode = state.nodes.first { $0.id == connection.sourceNodeId }
+            let targetNode = state.nodes.first { $0.id == connection.targetNodeId }
+            let label = "\(sourceNode?.title ?? "?") → \(targetNode?.title ?? "?")"
+
+            // Calculate approximate distance to bezier curve
+            let distance = approximateDistanceToBezier(point: canvasPoint, from: startPos, to: endPos)
+            connectionDistances.append((label, distance))
+        }
+
+        // Sort by distance
+        connectionDistances.sort { $0.1 < $1.1 }
+
+        // Calculate distances to all nodes
+        var nodeDistances: [(String, CGFloat)] = []
+        for node in state.nodes {
+            let nodeRect = CGRect(origin: node.position, size: node.size)
+            let distance = distanceToRect(point: canvasPoint, rect: nodeRect)
+            nodeDistances.append((node.title, distance))
+        }
+        nodeDistances.sort { $0.1 < $1.1 }
+
+        // Build log message
+        var details = "screenPos=\(Int(mouseInView.x)),\(Int(flippedY)) canvasPos=\(Int(canvasPoint.x)),\(Int(canvasPoint.y))"
+        details += "\n   scale=\(String(format: "%.2f", state.scale)), offset=\(Int(state.offset.width)),\(Int(state.offset.height))"
+
+        if !connectionDistances.isEmpty {
+            details += "\n   Nearest connections:"
+            for (label, dist) in connectionDistances.prefix(3) {
+                let hitStatus = dist <= 40 ? "🎯" : "❌"
+                details += "\n     \(hitStatus) \(label): \(Int(dist))px"
+            }
+        }
+
+        if !nodeDistances.isEmpty {
+            details += "\n   Nearest nodes:"
+            for (label, dist) in nodeDistances.prefix(3) {
+                let hitStatus = dist <= 0 ? "🎯" : "❌"
+                details += "\n     \(hitStatus) \(label): \(Int(dist))px"
+            }
+        }
+
+        WFLogger.hitTest("✗ BACKGROUND TAP (nothing hit)", details: details)
+    }
+
+    /// Calculate approximate distance from point to cubic bezier curve
+    private func approximateDistanceToBezier(point: CGPoint, from: CGPoint, to: CGPoint) -> CGFloat {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        // Calculate control points (same as ConnectionHitShape)
+        let controlOffset: CGFloat
+        if state.layoutMode == .vertical {
+            if abs(dy) < 50 {
+                controlOffset = max(abs(dx) * 0.3, 80)
+            } else if abs(dx) < 50 {
+                controlOffset = min(abs(dy) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dy) * 0.4, 100), distance * 0.45)
+            }
+        } else {
+            if abs(dx) < 50 {
+                controlOffset = max(abs(dy) * 0.3, 80)
+            } else if abs(dy) < 50 {
+                controlOffset = min(abs(dx) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dx) * 0.4, 100), distance * 0.45)
+            }
+        }
+
+        // Sample points along bezier and find minimum distance
+        var minDist: CGFloat = .greatestFiniteMagnitude
+        let samples = 20
+
+        for i in 0...samples {
+            let t = CGFloat(i) / CGFloat(samples)
+            let bezierPoint: CGPoint
+
+            if state.layoutMode == .vertical {
+                let control1 = CGPoint(x: from.x, y: from.y + (dy >= 0 ? controlOffset : -controlOffset))
+                let control2 = CGPoint(x: to.x, y: to.y - (dy >= 0 ? controlOffset : -controlOffset))
+                bezierPoint = cubicBezier(t: t, p0: from, p1: control1, p2: control2, p3: to)
+            } else {
+                let control1 = CGPoint(x: from.x + controlOffset, y: from.y)
+                let control2 = CGPoint(x: to.x - controlOffset, y: to.y)
+                bezierPoint = cubicBezier(t: t, p0: from, p1: control1, p2: control2, p3: to)
+            }
+
+            let dist = hypot(point.x - bezierPoint.x, point.y - bezierPoint.y)
+            minDist = min(minDist, dist)
+        }
+
+        return minDist
+    }
+
+    /// Cubic bezier interpolation
+    private func cubicBezier(t: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint) -> CGPoint {
+        let mt = 1 - t
+        let mt2 = mt * mt
+        let mt3 = mt2 * mt
+        let t2 = t * t
+        let t3 = t2 * t
+
+        return CGPoint(
+            x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t3 * p3.x,
+            y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t3 * p3.y
+        )
+    }
+
+    /// Calculate distance from point to rectangle (0 if inside)
+    private func distanceToRect(point: CGPoint, rect: CGRect) -> CGFloat {
+        if rect.contains(point) {
+            return 0
+        }
+
+        let closestX = max(rect.minX, min(point.x, rect.maxX))
+        let closestY = max(rect.minY, min(point.y, rect.maxY))
+        return hypot(point.x - closestX, point.y - closestY)
+    }
 }
 
 // MARK: - Connection Hit Shape
@@ -1037,6 +1432,7 @@ struct ConnectionHitShape: Shape {
     let from: CGPoint
     let to: CGPoint
     let tolerance: CGFloat
+    var layoutMode: WFLayoutMode = .freeform
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -1046,19 +1442,45 @@ struct ConnectionHitShape: Shape {
         let distance = sqrt(dx * dx + dy * dy)
 
         var controlOffset: CGFloat
-        if abs(dx) < 50 {
-            controlOffset = max(abs(dy) * 0.3, 80)
-        } else if abs(dy) < 50 {
-            controlOffset = min(abs(dx) * 0.5, distance * 0.4)
+
+        if layoutMode == .vertical {
+            // Vertical bezier control points
+            if abs(dy) < 50 {
+                controlOffset = max(abs(dx) * 0.3, 80)
+            } else if abs(dx) < 50 {
+                controlOffset = min(abs(dy) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dy) * 0.4, 100), distance * 0.45)
+            }
+
+            let control1: CGPoint
+            let control2: CGPoint
+            if dy >= 0 {
+                control1 = CGPoint(x: from.x, y: from.y + controlOffset)
+                control2 = CGPoint(x: to.x, y: to.y - controlOffset)
+            } else {
+                control1 = CGPoint(x: from.x, y: from.y - controlOffset)
+                control2 = CGPoint(x: to.x, y: to.y + controlOffset)
+            }
+
+            path.move(to: from)
+            path.addCurve(to: to, control1: control1, control2: control2)
         } else {
-            controlOffset = min(max(abs(dx) * 0.4, 100), distance * 0.45)
+            // Horizontal bezier control points (freeform mode)
+            if abs(dx) < 50 {
+                controlOffset = max(abs(dy) * 0.3, 80)
+            } else if abs(dy) < 50 {
+                controlOffset = min(abs(dx) * 0.5, distance * 0.4)
+            } else {
+                controlOffset = min(max(abs(dx) * 0.4, 100), distance * 0.45)
+            }
+
+            let control1 = CGPoint(x: from.x + controlOffset, y: from.y)
+            let control2 = CGPoint(x: to.x - controlOffset, y: to.y)
+
+            path.move(to: from)
+            path.addCurve(to: to, control1: control1, control2: control2)
         }
-
-        let control1 = CGPoint(x: from.x + controlOffset, y: from.y)
-        let control2 = CGPoint(x: to.x - controlOffset, y: to.y)
-
-        path.move(to: from)
-        path.addCurve(to: to, control1: control1, control2: control2)
 
         return path.strokedPath(StrokeStyle(lineWidth: tolerance * 2, lineCap: .round))
     }
@@ -1157,6 +1579,10 @@ struct CanvasBackground: View {
                     path.move(to: CGPoint(x: x + armLength, y: y - armLength))
                     path.addLine(to: CGPoint(x: x - armLength, y: y + armLength))
                     dotPath = path.strokedPath(StrokeStyle(lineWidth: 0.5, lineCap: .round))
+
+                case .lines:
+                    // Lines are drawn separately below, skip dot drawing
+                    dotPath = Path()
                 }
 
                 context.fill(dotPath, with: .color(dotColor))
@@ -1164,6 +1590,62 @@ struct CanvasBackground: View {
                 x += gridSize
                 col += 1
             }
+            y += gridSize
+            row += 1
+        }
+
+        // Draw line grid if style is .lines
+        if dotStyle == .lines {
+            drawLineGrid(context: context, size: size, startX: startX, startY: startY, gridSize: gridSize)
+        }
+    }
+
+    private func drawLineGrid(
+        context: GraphicsContext,
+        size: CGSize,
+        startX: CGFloat,
+        startY: CGFloat,
+        gridSize: CGFloat
+    ) {
+        let minorLineColor = theme.gridDot.opacity(0.15)
+        let majorLineColor = theme.gridDot.opacity(0.25)
+        let minorLineWidth: CGFloat = 0.5
+        let majorLineWidth: CGFloat = 0.5
+
+        // Draw vertical lines
+        var col = 0
+        var x = startX
+        while x < size.width + gridSize {
+            let isMajor = col % majorGridInterval == 0
+            var path = Path()
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: size.height))
+
+            context.stroke(
+                path,
+                with: .color(isMajor ? majorLineColor : minorLineColor),
+                lineWidth: isMajor ? majorLineWidth : minorLineWidth
+            )
+
+            x += gridSize
+            col += 1
+        }
+
+        // Draw horizontal lines
+        var row = 0
+        var y = startY
+        while y < size.height + gridSize {
+            let isMajor = row % majorGridInterval == 0
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+
+            context.stroke(
+                path,
+                with: .color(isMajor ? majorLineColor : minorLineColor),
+                lineWidth: isMajor ? majorLineWidth : minorLineWidth
+            )
+
             y += gridSize
             row += 1
         }
