@@ -2,7 +2,7 @@ import React from 'react';
 import { CodeArchitecture } from './components/AICodeGenerator';
 import { Button } from './components/Button';
 import { MockInterface } from './components/MockInterface';
-import { Github, Box, Layers, Zap, MousePointer2, ArrowDown, Package, Copy, CheckCircle2, XCircle, Puzzle, Gamepad2, Workflow } from 'lucide-react';
+import { Github, Box, Layers, Zap, MousePointer2, ArrowDown, Package, Copy, CheckCircle2, XCircle, Puzzle, Gamepad2, Workflow, Bot, Brain, MessageSquare, GitBranch, Cpu } from 'lucide-react';
 
 const Features = () => (
   <div className="relative border-t border-zinc-800">
@@ -243,6 +243,104 @@ export default function App() {
               <h2 className="text-2xl font-bold text-white font-sans tracking-tight mb-8">USE CASES</h2>
               <UseCases />
            </div>
+        </div>
+
+        {/* Agent Development Section */}
+        <div id="agents" className="mb-40 scroll-mt-24">
+          <div className="flex items-end justify-between mb-10">
+            <h2 className="text-3xl font-bold text-white font-sans tracking-tight">FOR AGENT DEVELOPERS</h2>
+            <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">AI-First</span>
+          </div>
+
+          <div className="border border-zinc-800 bg-[#0c0c0e]">
+            <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-zinc-800">
+              {/* Left: Benefits */}
+              <div className="p-8 lg:p-12">
+                <div className="flex items-center gap-3 mb-6">
+                  <Bot size={24} className="text-purple-400" />
+                  <h3 className="text-xl font-bold text-white font-sans">Build Agent UIs Natively</h3>
+                </div>
+                <p className="text-zinc-400 text-sm mb-8 leading-relaxed">
+                  Stop shipping Electron apps for your agent interfaces. WFKit lets you build
+                  professional-grade workflow editors that feel at home on macOS and iOS.
+                </p>
+
+                <div className="space-y-4">
+                  {[
+                    { icon: <Brain size={16}/>, title: "LLM Orchestration", desc: "Visual node types for prompts, models, and tool calls" },
+                    { icon: <GitBranch size={16}/>, title: "Branching Logic", desc: "Conditional flows, loops, and parallel execution paths" },
+                    { icon: <MessageSquare size={16}/>, title: "Tool Integration", desc: "Connect to MCP servers, APIs, and local functions" },
+                    { icon: <Cpu size={16}/>, title: "Local-First", desc: "Run workflows offline with on-device models" },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 border border-zinc-800 hover:border-zinc-700 transition-colors">
+                      <div className="text-zinc-500 mt-0.5">{item.icon}</div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wide">{item.title}</h4>
+                        <p className="text-[11px] text-zinc-500 font-mono mt-1">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right: Code Example */}
+              <div className="bg-[#050505]">
+                <div className="border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">AgentWorkflow.swift</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
+                    <span className="text-[10px] text-zinc-600 font-mono">Agent Node</span>
+                  </div>
+                </div>
+                <pre className="p-6 text-[11px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
+{`// Define an agent workflow
+let researcher = WorkflowNode(
+    type: .llm,
+    title: "Research Agent",
+    configuration: NodeConfiguration(
+        model: "claude-sonnet-4-20250514",
+        systemPrompt: """
+            You are a research assistant.
+            Analyze queries and find relevant info.
+            """,
+        tools: [.webSearch, .readFile]
+    )
+)
+
+let writer = WorkflowNode(
+    type: .llm,
+    title: "Writer Agent",
+    configuration: NodeConfiguration(
+        model: "claude-sonnet-4-20250514",
+        systemPrompt: "Write based on research.",
+        temperature: 0.7
+    )
+)
+
+// Chain agents together
+canvas.connect(from: researcher, to: writer)
+
+// Add conditional routing
+let router = WorkflowNode(
+    type: .condition,
+    title: "Quality Check",
+    configuration: NodeConfiguration(
+        condition: "output.score > 0.8"
+    )
+)
+canvas.connect(from: writer, to: router)
+canvas.connect(
+    from: router, port: "pass",
+    to: outputNode
+)
+canvas.connect(
+    from: router, port: "fail",
+    to: researcher  // Loop back for retry
+)`}
+                </pre>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Documentation Section */}
