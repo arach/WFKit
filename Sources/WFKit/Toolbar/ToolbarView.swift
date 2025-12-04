@@ -86,6 +86,48 @@ public struct ToolbarView: View {
             .foregroundStyle(theme.textSecondary)
             .help("Change Appearance")
 
+            // Connection style picker
+            Menu {
+                ForEach(WFConnectionStyle.allCases) { connectionStyle in
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            theme.connectionStyleOverride = connectionStyle
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: connectionStyle.icon)
+                            Text(connectionStyle.displayName)
+                            if theme.connectionStyle == connectionStyle {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        theme.connectionStyleOverride = nil
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("Use Theme Default")
+                        if theme.connectionStyleOverride == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: theme.connectionStyle.icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.textSecondary)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(theme.textSecondary)
+            .help("Change Connection Style")
+
             Divider()
                 .frame(height: 20)
                 .background(theme.divider.opacity(0.3))

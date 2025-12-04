@@ -38,6 +38,33 @@ public struct DebugAction: Identifiable {
     }
 }
 
+/// A group of actions displayed horizontally on the same row
+public struct DebugActionGroup: Identifiable {
+    public let id = UUID()
+    public let actions: [DebugAction]
+
+    public init(_ actions: [DebugAction]) {
+        self.actions = actions
+    }
+
+    public init(_ actions: DebugAction...) {
+        self.actions = actions
+    }
+}
+
+/// Wrapper enum for actions that can be single or grouped
+public enum DebugActionItem: Identifiable {
+    case single(DebugAction)
+    case group(DebugActionGroup)
+
+    public var id: UUID {
+        switch self {
+        case .single(let action): return action.id
+        case .group(let group): return group.id
+        }
+    }
+}
+
 // MARK: - Debug Toolbar
 
 public struct DebugToolbar: View {
@@ -47,9 +74,25 @@ public struct DebugToolbar: View {
     let title: String
     let icon: String
     let sections: [DebugSection]
-    let actions: [DebugAction]
+    let actionItems: [DebugActionItem]
     let copyHandler: (() -> String)?
 
+    /// Initialize with action items (supports grouping)
+    public init(
+        title: String = "DEV",
+        icon: String = "ant.fill",
+        sections: [DebugSection],
+        actionItems: [DebugActionItem] = [],
+        onCopy copyHandler: (() -> String)? = nil
+    ) {
+        self.title = title
+        self.icon = icon
+        self.sections = sections
+        self.actionItems = actionItems
+        self.copyHandler = copyHandler
+    }
+
+    /// Backwards-compatible initializer with plain actions array
     public init(
         title: String = "DEV",
         icon: String = "ant.fill",
@@ -60,7 +103,24 @@ public struct DebugToolbar: View {
         self.title = title
         self.icon = icon
         self.sections = sections
-        self.actions = actions
+        self.actionItems = actions.map { .single($0) }
+        self.copyHandler = copyHandler
+    }
+
+    /// Initialize with both plain actions and grouped action items
+    public init(
+        title: String = "DEV",
+        icon: String = "ant.fill",
+        sections: [DebugSection],
+        actions: [DebugAction],
+        actionItems: [DebugActionItem],
+        onCopy copyHandler: (() -> String)? = nil
+    ) {
+        self.title = title
+        self.icon = icon
+        self.sections = sections
+        // Combine: single actions first, then grouped items
+        self.actionItems = actions.map { .single($0) } + actionItems
         self.copyHandler = copyHandler
     }
 
@@ -141,9 +201,9 @@ public struct DebugToolbar: View {
                     SectionView(section: section)
                 }
 
-                if !actions.isEmpty || copyHandler != nil {
+                if !actionItems.isEmpty || copyHandler != nil {
                     ActionsView(
-                        actions: actions,
+                        actionItems: actionItems,
                         copyHandler: copyHandler,
                         showCopiedFeedback: $showCopiedFeedback
                     )
@@ -208,7 +268,7 @@ private struct SectionView: View {
 // MARK: - Actions View
 
 private struct ActionsView: View {
-    let actions: [DebugAction]
+    let actionItems: [DebugActionItem]
     let copyHandler: (() -> String)?
     @Binding var showCopiedFeedback: Bool
 
@@ -220,13 +280,28 @@ private struct ActionsView: View {
                 .foregroundColor(.secondary)
 
             VStack(spacing: 4) {
-                ForEach(actions) { action in
-                    ActionButton(
-                        icon: action.icon,
-                        label: action.label,
-                        destructive: action.destructive,
-                        action: action.action
-                    )
+                ForEach(actionItems) { item in
+                    switch item {
+                    case .single(let action):
+                        ActionButton(
+                            icon: action.icon,
+                            label: action.label,
+                            destructive: action.destructive,
+                            action: action.action
+                        )
+                    case .group(let group):
+                        HStack(spacing: 4) {
+                            ForEach(group.actions) { action in
+                                ActionButton(
+                                    icon: action.icon,
+                                    label: action.label,
+                                    destructive: action.destructive,
+                                    compact: true,
+                                    action: action.action
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if let copyHandler = copyHandler {
@@ -260,26 +335,47 @@ private struct ActionButton: View {
     let icon: String
     let label: String
     var destructive: Bool = false
+    var compact: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(destructive ? .red : .accentColor)
-                    .frame(width: 14)
+            if compact {
+                // Compact mode: icon + short label, equal width for grouping
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(destructive ? .red : .accentColor)
 
-                Text(label)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(destructive ? .red : .primary)
+                    Text(label)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(destructive ? .red : .primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 6)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(4)
+            } else {
+                // Full mode: icon + label + spacer
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(destructive ? .red : .accentColor)
+                        .frame(width: 14)
 
-                Spacer()
+                    Text(label)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(destructive ? .red : .primary)
+
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(4)
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(4)
         }
         .buttonStyle(.plain)
     }

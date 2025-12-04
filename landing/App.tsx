@@ -74,6 +74,7 @@ const Navbar = () => (
       </div>
       <div className="hidden md:flex items-center gap-8">
         <a href="#docs" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Documentation</a>
+        <a href="#specs" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Specs</a>
         <a href="#install" className="text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Install</a>
         <div className="h-4 w-[1px] bg-zinc-800"></div>
         <a href="https://github.com/arach/WFKit" className="text-zinc-500 hover:text-white transition-colors flex items-center gap-2 border border-zinc-800 hover:border-zinc-600 px-4 py-2">
@@ -433,12 +434,12 @@ canvas.connect(from: source, to: node)`}
         {/* Quick Install */}
         <div id="install" className="max-w-2xl mx-auto text-center border border-zinc-800 p-12 bg-[#0c0c0e] relative overflow-hidden scroll-mt-24">
            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-20"></div>
-           
+
            <h2 className="text-3xl font-bold text-white font-sans tracking-tight mb-6">START BUILDING</h2>
            <p className="text-zinc-500 mb-8 max-w-md mx-auto font-mono text-sm">
             Add the package to your project and import WFKit to get started instantly.
            </p>
-           
+
            <div className="flex flex-col items-center gap-4">
               <div className="flex items-center bg-black border border-zinc-800 p-4 w-full max-w-lg group hover:border-zinc-600 transition-colors cursor-pointer" onClick={() => navigator.clipboard.writeText('.package(url: "https://github.com/arach/WFKit.git", from: "1.0.0")')}>
                  <span className="text-zinc-500 mr-4 select-none">$</span>
@@ -449,6 +450,208 @@ canvas.connect(from: source, to: node)`}
               </div>
               <span className="text-[10px] text-zinc-600 uppercase tracking-widest">Click to copy dependency</span>
            </div>
+        </div>
+
+        {/* TWF Specification Section */}
+        <div id="specs" className="mt-40 scroll-mt-24">
+          <div className="flex items-end justify-between mb-10">
+            <h2 className="text-3xl font-bold text-white font-sans tracking-tight">SPECIFICATIONS</h2>
+            <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">TWF v1.0</span>
+          </div>
+
+          <div className="border border-zinc-800 bg-[#0c0c0e] mb-10">
+            <div className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Workflow size={20} className="text-purple-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-widest">TWF (Talkie Workflow Format)</h3>
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono">.twf.json</span>
+            </div>
+
+            <div className="p-6 lg:p-8">
+              <p className="text-zinc-400 text-sm mb-6 leading-relaxed max-w-3xl">
+                TWF is a human-readable, LLM-friendly workflow definition format designed for voice memo and AI processing pipelines.
+                It uses slug-based IDs (not UUIDs) for portability and git-friendliness.
+              </p>
+
+              {/* Format Overview */}
+              <div className="grid lg:grid-cols-2 gap-6 mb-8">
+                <div>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Workflow Structure</h4>
+                  <pre className="bg-black border border-zinc-800 p-4 text-[11px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
+{`{
+  "slug": "workflow-slug",
+  "name": "Display Name",
+  "description": "What this does",
+  "icon": "sf.symbol.name",
+  "color": "purple",
+  "isEnabled": true,
+  "isPinned": false,
+  "autoRun": false,
+  "steps": [...]
+}`}
+                  </pre>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Step Structure</h4>
+                  <pre className="bg-black border border-zinc-800 p-4 text-[11px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
+{`{
+  "id": "step-slug",
+  "type": "LLM Generation",
+  "config": {
+    "llm": {
+      "costTier": "balanced",
+      "prompt": "{{TRANSCRIPT}}",
+      "temperature": 0.7,
+      "maxTokens": 1024
+    }
+  }
+}`}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Step Types */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">14 Step Types</h4>
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {[
+                  { category: "AI", steps: ["LLM Generation", "Transcribe Audio"] },
+                  { category: "Logic", steps: ["Transform Data", "Conditional Branch"] },
+                  { category: "Output", steps: ["Send Notification", "Notify iPhone", "Copy to Clipboard", "Save to File"] },
+                  { category: "Integration", steps: ["Create Reminder", "Run Shell Command", "Trigger Detection", "Extract Intents", "Execute Workflows", "Webhook"] },
+                ].map((group, i) => (
+                  <div key={i} className="border border-zinc-800 p-4">
+                    <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{group.category}</h5>
+                    <div className="space-y-1">
+                      {group.steps.map((step, j) => (
+                        <div key={j} className="text-[11px] text-zinc-400 font-mono">{step}</div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Template Variables */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Template Variables</h4>
+              <div className="grid md:grid-cols-2 gap-6 mb-8">
+                <div className="border border-zinc-800 p-4">
+                  <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Built-in Variables</h5>
+                  <div className="space-y-2 text-[11px] font-mono">
+                    {[
+                      { var: "{{TRANSCRIPT}}", desc: "Full transcript text" },
+                      { var: "{{TITLE}}", desc: "Voice memo title" },
+                      { var: "{{DATE}}", desc: "Recording date" },
+                      { var: "{{DATETIME}}", desc: "Full timestamp" },
+                      { var: "{{AUDIO_PATH}}", desc: "Path to audio file" },
+                    ].map((v, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <code className="text-purple-400">{v.var}</code>
+                        <span className="text-zinc-500">{v.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border border-zinc-800 p-4">
+                  <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Step References</h5>
+                  <div className="space-y-2 text-[11px] font-mono">
+                    <div className="flex items-center gap-3">
+                      <code className="text-purple-400">{"{{step-id}}"}</code>
+                      <span className="text-zinc-500">Full output of step</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <code className="text-purple-400">{"{{step-id.property}}"}</code>
+                      <span className="text-zinc-500">Nested property (JSON)</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <code className="text-purple-400">{"{{NOW+1d}}"}</code>
+                      <span className="text-zinc-500">Date expressions</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TWF to WFKit Mapping */}
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">TWF → WFKit Node Mapping</h4>
+              <div className="border border-zinc-800 bg-black">
+                <div className="grid grid-cols-3 border-b border-zinc-800 bg-zinc-900/20">
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">TWF Step Type</div>
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">WFKit NodeType</div>
+                  <div className="p-3 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border-l border-zinc-800">Category</div>
+                </div>
+                {[
+                  { twf: "LLM Generation", wfkit: ".llm", cat: "AI" },
+                  { twf: "Transcribe Audio", wfkit: ".llm", cat: "AI" },
+                  { twf: "Conditional Branch", wfkit: ".condition", cat: "Logic" },
+                  { twf: "Transform Data", wfkit: ".transform", cat: "Logic" },
+                  { twf: "Send Notification", wfkit: ".notification", cat: "Output" },
+                  { twf: "Copy to Clipboard", wfkit: ".output", cat: "Output" },
+                  { twf: "Run Shell Command", wfkit: ".action", cat: "Integration" },
+                ].map((row, i) => (
+                  <div key={i} className="grid grid-cols-3 border-b last:border-b-0 border-zinc-800 hover:bg-white/5 transition-colors">
+                    <div className="p-3 text-[11px] font-mono text-zinc-400">{row.twf}</div>
+                    <div className="p-3 text-[11px] font-mono text-white border-l border-zinc-800">{row.wfkit}</div>
+                    <div className="p-3 text-[11px] font-mono text-zinc-500 border-l border-zinc-800">{row.cat}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Sample Workflows & UUID Generation */}
+          <div className="grid lg:grid-cols-2 gap-6">
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Sample Workflows</h4>
+              <p className="text-xs text-zinc-500 mb-4">
+                The package includes sample .twf.json files in <code className="text-zinc-400">Sources/WFKit/Resources/SampleWorkflows/</code>
+              </p>
+              <div className="space-y-2">
+                {[
+                  { file: "quick-summary.twf.json", complexity: "Simple" },
+                  { file: "tweet-summary.twf.json", complexity: "Medium" },
+                  { file: "hq-transcribe.twf.json", complexity: "Medium" },
+                  { file: "feature-ideation.twf.json", complexity: "Complex" },
+                  { file: "learning-capture.twf.json", complexity: "Complex" },
+                ].map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-[11px] font-mono p-2 border border-zinc-800 hover:border-zinc-700 transition-colors">
+                    <span className="text-zinc-300">{f.file}</span>
+                    <span className="text-zinc-600">{f.complexity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-6">
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Deterministic UUID Generation</h4>
+              <p className="text-xs text-zinc-500 mb-4">
+                TWF uses slug-based IDs that convert to stable UUIDs via SHA256 hashing. Same slug always produces the same UUID.
+              </p>
+              <pre className="bg-black border border-zinc-800 p-3 text-[10px] text-zinc-400 font-mono overflow-x-auto leading-relaxed">
+{`// UUID from slug algorithm
+UUID = SHA256("talkie.twf:{slug}")[:16]
+
+// With version 4 bits set
+uuidBytes[6] = (bytes[6] & 0x0F) | 0x40
+uuidBytes[8] = (bytes[8] & 0x3F) | 0x80
+
+// This ensures:
+// - Same slug → same UUID
+// - Safe re-imports (no duplication)
+// - Git-friendly (no random UUIDs)`}
+              </pre>
+            </div>
+          </div>
+
+          {/* Full Spec Link */}
+          <div className="mt-8 text-center">
+            <a
+              href="https://github.com/arach/WFKit/blob/main/Sources/WFKit/Resources/SampleWorkflows/TWF_SPEC.md"
+              target="_blank"
+              className="inline-flex items-center gap-2 border border-zinc-700 hover:border-zinc-500 px-6 py-3 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
+            >
+              <Github size={14} />
+              View Full TWF Specification
+            </a>
+          </div>
         </div>
 
       </main>

@@ -14,9 +14,12 @@ public struct ConnectionView: View {
     var showFlowAnimation: Bool = true
     var isSelected: Bool = false
     var isHovered: Bool = false
+    var curveStyle: WFConnectionStyle = .bezier
 
     @State private var animationPhase: CGFloat = 0
     @State private var flowPhase: CGFloat = 0
+    @Environment(\.wfTheme) private var theme
+    @Environment(\.wfLayoutMode) private var layoutMode
 
     public init(
         from: CGPoint,
@@ -28,7 +31,8 @@ public struct ConnectionView: View {
         animated: Bool = false,
         showFlowAnimation: Bool = true,
         isSelected: Bool = false,
-        isHovered: Bool = false
+        isHovered: Bool = false,
+        curveStyle: WFConnectionStyle = .bezier
     ) {
         self.from = from
         self.to = to
@@ -40,13 +44,22 @@ public struct ConnectionView: View {
         self.showFlowAnimation = showFlowAnimation
         self.isSelected = isSelected
         self.isHovered = isHovered
+        self.curveStyle = curveStyle
+    }
+
+    /// The effective curve style (uses theme default if not explicitly set)
+    private var effectiveStyle: WFConnectionStyle {
+        curveStyle
     }
 
     public var body: some View {
         Canvas { context, size in
-            let path = bezierPath(from: from, to: to)
+            let path = connectionPath(from: from, to: to, style: effectiveStyle)
 
-            let effectiveLineWidth = isSelected ? lineWidth + 1.5 : (isHovered ? lineWidth + 1.0 : lineWidth)
+            // Use theme line width as base, with vertical mode multiplier
+            let themeLineWidth = theme.connectionLineWidth
+            let baseLineWidth = layoutMode == .vertical ? (themeLineWidth * 1.5) : themeLineWidth
+            let effectiveLineWidth = isSelected ? baseLineWidth + 1.5 : (isHovered ? baseLineWidth + 1.0 : baseLineWidth)
             let effectiveColor = isSelected ? Color.blue : (isHovered ? color.opacity(0.9) : color)
 
             if isSelected {
@@ -114,6 +127,8 @@ public struct ConnectionView: View {
                 drawDeleteButton(context: context, path: path)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
         .onAppear {
             if animated {
                 withAnimation(.linear(duration: 0.5).repeatForever(autoreverses: false)) {
@@ -125,6 +140,23 @@ public struct ConnectionView: View {
                     flowPhase = 1.0
                 }
             }
+        }
+    }
+
+    // MARK: - Path Generation
+
+    /// Dispatcher for different connection styles
+    private func connectionPath(from start: CGPoint, to end: CGPoint, style: WFConnectionStyle) -> Path {
+        switch style {
+        case .bezier:
+            // Use vertical bezier in vertical layout mode
+            return layoutMode == .vertical ? verticalBezierPath(from: start, to: end) : bezierPath(from: start, to: end)
+        case .straight:
+            return straightPath(from: start, to: end)
+        case .step:
+            return stepPath(from: start, to: end)
+        case .smoothStep:
+            return smoothStepPath(from: start, to: end)
         }
     }
 
@@ -152,6 +184,209 @@ public struct ConnectionView: View {
         let control2 = CGPoint(x: end.x - controlOffset, y: end.y)
 
         path.addCurve(to: end, control1: control1, control2: control2)
+
+        return path
+    }
+
+    // MARK: - Vertical Bezier Path (for vertical layout mode)
+
+    private func verticalBezierPath(from start: CGPoint, to end: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: start)
+
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        var controlOffset: CGFloat
+
+        // Vertical-first routing: control points extend up/down
+        if abs(dy) < 50 {
+            controlOffset = max(abs(dx) * 0.3, 80)
+        } else if abs(dx) < 50 {
+            controlOffset = min(abs(dy) * 0.5, distance * 0.4)
+        } else {
+            controlOffset = min(max(abs(dy) * 0.4, 100), distance * 0.45)
+        }
+
+        // Control points extend in the direction of flow
+        // Normal flow (top to bottom): dy > 0, control1 goes down, control2 comes from up
+        // Reverse flow (bottom to top): dy < 0, control1 goes up, control2 comes from down
+        let control1: CGPoint
+        let control2: CGPoint
+
+        if dy >= 0 {
+            // Normal: start is above end (top to bottom)
+            control1 = CGPoint(x: start.x, y: start.y + controlOffset)
+            control2 = CGPoint(x: end.x, y: end.y - controlOffset)
+        } else {
+            // Reverse: start is below end (bottom to top)
+            control1 = CGPoint(x: start.x, y: start.y - controlOffset)
+            control2 = CGPoint(x: end.x, y: end.y + controlOffset)
+        }
+
+        path.addCurve(to: end, control1: control1, control2: control2)
+
+        return path
+    }
+
+    // MARK: - Straight Path
+
+    private func straightPath(from start: CGPoint, to end: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+        return path
+    }
+
+    // MARK: - Step Path (90-degree orthogonal)
+
+    private func stepPath(from start: CGPoint, to end: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: start)
+
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+
+        // Horizontal-first routing (for left-to-right flow)
+        if dx >= 0 {
+            // Normal case: target is to the right
+            let midX = start.x + dx / 2
+            path.addLine(to: CGPoint(x: midX, y: start.y))
+            path.addLine(to: CGPoint(x: midX, y: end.y))
+            path.addLine(to: end)
+        } else {
+            // Backwards case: target is to the left, route around
+            let offsetY = abs(dy) < 50 ? 50 : abs(dy) * 0.3
+            let routeY = dy >= 0 ? start.y + offsetY : start.y - offsetY
+
+            path.addLine(to: CGPoint(x: start.x + 30, y: start.y))
+            path.addLine(to: CGPoint(x: start.x + 30, y: routeY))
+            path.addLine(to: CGPoint(x: end.x - 30, y: routeY))
+            path.addLine(to: CGPoint(x: end.x - 30, y: end.y))
+            path.addLine(to: end)
+        }
+
+        return path
+    }
+
+    // MARK: - Smooth Step Path (rounded orthogonal)
+
+    private func smoothStepPath(from start: CGPoint, to end: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: start)
+
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let cornerRadius: CGFloat = min(20, abs(dx) / 4, abs(dy) / 4)
+
+        // Horizontal-first routing with rounded corners
+        if dx >= 0 && abs(dx) > cornerRadius * 2 {
+            let midX = start.x + dx / 2
+
+            if abs(dy) < cornerRadius * 2 {
+                // Nearly horizontal - just use bezier
+                return bezierPath(from: start, to: end)
+            }
+
+            // First horizontal segment
+            path.addLine(to: CGPoint(x: midX - cornerRadius, y: start.y))
+
+            // First corner
+            if dy > 0 {
+                path.addQuadCurve(
+                    to: CGPoint(x: midX, y: start.y + cornerRadius),
+                    control: CGPoint(x: midX, y: start.y)
+                )
+            } else {
+                path.addQuadCurve(
+                    to: CGPoint(x: midX, y: start.y - cornerRadius),
+                    control: CGPoint(x: midX, y: start.y)
+                )
+            }
+
+            // Vertical segment
+            if dy > 0 {
+                path.addLine(to: CGPoint(x: midX, y: end.y - cornerRadius))
+                // Second corner
+                path.addQuadCurve(
+                    to: CGPoint(x: midX + cornerRadius, y: end.y),
+                    control: CGPoint(x: midX, y: end.y)
+                )
+            } else {
+                path.addLine(to: CGPoint(x: midX, y: end.y + cornerRadius))
+                // Second corner
+                path.addQuadCurve(
+                    to: CGPoint(x: midX + cornerRadius, y: end.y),
+                    control: CGPoint(x: midX, y: end.y)
+                )
+            }
+
+            // Final horizontal segment
+            path.addLine(to: end)
+        } else if dx < 0 {
+            // Backwards routing with smooth corners
+            let offsetY: CGFloat = abs(dy) < 50 ? 50 : abs(dy) * 0.3
+            let routeY = dy >= 0 ? start.y + offsetY : start.y - offsetY
+            let smallRadius = min(cornerRadius, 15)
+
+            // First short horizontal
+            path.addLine(to: CGPoint(x: start.x + 30 - smallRadius, y: start.y))
+
+            // Corner down/up
+            if dy >= 0 {
+                path.addQuadCurve(
+                    to: CGPoint(x: start.x + 30, y: start.y + smallRadius),
+                    control: CGPoint(x: start.x + 30, y: start.y)
+                )
+                path.addLine(to: CGPoint(x: start.x + 30, y: routeY - smallRadius))
+                path.addQuadCurve(
+                    to: CGPoint(x: start.x + 30 - smallRadius, y: routeY),
+                    control: CGPoint(x: start.x + 30, y: routeY)
+                )
+            } else {
+                path.addQuadCurve(
+                    to: CGPoint(x: start.x + 30, y: start.y - smallRadius),
+                    control: CGPoint(x: start.x + 30, y: start.y)
+                )
+                path.addLine(to: CGPoint(x: start.x + 30, y: routeY + smallRadius))
+                path.addQuadCurve(
+                    to: CGPoint(x: start.x + 30 - smallRadius, y: routeY),
+                    control: CGPoint(x: start.x + 30, y: routeY)
+                )
+            }
+
+            // Long horizontal at routeY
+            path.addLine(to: CGPoint(x: end.x - 30 + smallRadius, y: routeY))
+
+            // Corner to vertical
+            if dy >= 0 {
+                path.addQuadCurve(
+                    to: CGPoint(x: end.x - 30, y: routeY + smallRadius),
+                    control: CGPoint(x: end.x - 30, y: routeY)
+                )
+                path.addLine(to: CGPoint(x: end.x - 30, y: end.y - smallRadius))
+                path.addQuadCurve(
+                    to: CGPoint(x: end.x - 30 + smallRadius, y: end.y),
+                    control: CGPoint(x: end.x - 30, y: end.y)
+                )
+            } else {
+                path.addQuadCurve(
+                    to: CGPoint(x: end.x - 30, y: routeY - smallRadius),
+                    control: CGPoint(x: end.x - 30, y: routeY)
+                )
+                path.addLine(to: CGPoint(x: end.x - 30, y: end.y + smallRadius))
+                path.addQuadCurve(
+                    to: CGPoint(x: end.x - 30 + smallRadius, y: end.y),
+                    control: CGPoint(x: end.x - 30, y: end.y)
+                )
+            }
+
+            path.addLine(to: end)
+        } else {
+            // Very short horizontal distance - use simple path
+            path.addLine(to: end)
+        }
 
         return path
     }

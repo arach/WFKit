@@ -2,6 +2,45 @@ import Foundation
 import SwiftUI
 import AppKit
 
+// MARK: - Layout Mode
+
+/// Controls how nodes are positioned and connected on the canvas
+public enum WFLayoutMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Freeform: nodes can be placed anywhere, left-to-right flow
+    case freeform
+    /// Vertical: auto-arranged top-to-bottom flow, compact nodes
+    case vertical
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .freeform: return "Freeform"
+        case .vertical: return "Vertical"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .freeform: return "rectangle.3.group"
+        case .vertical: return "arrow.down.to.line"
+        }
+    }
+}
+
+// MARK: - Layout Mode Environment Key
+
+private struct WFLayoutModeKey: EnvironmentKey {
+    static let defaultValue: WFLayoutMode = .freeform
+}
+
+extension EnvironmentValues {
+    public var wfLayoutMode: WFLayoutMode {
+        get { self[WFLayoutModeKey.self] }
+        set { self[WFLayoutModeKey.self] = newValue }
+    }
+}
+
 // MARK: - Canvas Snapshot (for Undo/Redo)
 
 public struct CanvasSnapshot: Equatable, Sendable {
@@ -128,6 +167,9 @@ public final class CanvasState {
     // MARK: - Interaction State
     public var isDragging: Bool = false
     public var isPanning: Bool = false
+
+    // MARK: - Layout Mode
+    public var layoutMode: WFLayoutMode = .freeform
 
     // MARK: - Drag Snapshot (for smooth dragging from initial position)
     private var dragSnapshot: [UUID: CGPoint] = [:]
@@ -358,6 +400,98 @@ public final class CanvasState {
             x: lastNode.position.x,
             y: lastNode.position.y + lastNode.size.height + 40
         )
+    }
+
+    // MARK: - Layout Mode Operations
+
+    /// Switch layout mode and optionally trigger auto-layout
+    public func setLayoutMode(_ mode: WFLayoutMode, autoLayout: Bool = true) {
+        guard mode != layoutMode else { return }
+        layoutMode = mode
+        if autoLayout {
+            switch mode {
+            case .freeform:
+                self.autoLayout()
+            case .vertical:
+                autoLayoutVertical()
+            }
+        }
+    }
+
+    /// Auto-layout for vertical mode (top-to-bottom flow)
+    /// Nodes are arranged in rows by topological level, flowing downward
+    public func autoLayoutVertical(spacing: CGSize = CGSize(width: 220, height: 100), origin: CGPoint = CGPoint(x: 200, y: 80)) {
+        guard !nodes.isEmpty else { return }
+
+        // Build adjacency for topological sort
+        var inDegree: [UUID: Int] = [:]
+        var outEdges: [UUID: [UUID]] = [:]
+
+        for node in nodes {
+            inDegree[node.id] = 0
+            outEdges[node.id] = []
+        }
+
+        for conn in connections {
+            inDegree[conn.targetNodeId, default: 0] += 1
+            outEdges[conn.sourceNodeId, default: []].append(conn.targetNodeId)
+        }
+
+        // Kahn's algorithm for topological levels
+        var levels: [[UUID]] = []
+        var queue = nodes.filter { inDegree[$0.id] == 0 }.map { $0.id }
+        var remaining = inDegree
+
+        while !queue.isEmpty {
+            levels.append(queue)
+            var nextQueue: [UUID] = []
+
+            for nodeId in queue {
+                for targetId in outEdges[nodeId] ?? [] {
+                    remaining[targetId, default: 0] -= 1
+                    if remaining[targetId] == 0 {
+                        nextQueue.append(targetId)
+                    }
+                }
+            }
+            queue = nextQueue
+        }
+
+        // Handle any remaining nodes (cycles or disconnected)
+        let positioned = Set(levels.flatMap { $0 })
+        let unpositioned = nodes.filter { !positioned.contains($0.id) }.map { $0.id }
+        if !unpositioned.isEmpty {
+            levels.append(unpositioned)
+        }
+
+        // Position nodes by level - VERTICAL: rows go down, columns go right
+        // Track cumulative Y to account for actual node heights
+        var currentY = origin.y
+        let verticalGap: CGFloat = spacing.height  // Gap between rows (not total row height)
+
+        for (_, level) in levels.enumerated() {
+            // Find the tallest node in this row
+            let rowNodeHeights = level.compactMap { nodeId in
+                nodes.first(where: { $0.id == nodeId })?.size.height
+            }
+            let maxRowHeight = rowNodeHeights.max() ?? 120
+
+            // Center nodes horizontally within this row
+            let rowWidth = CGFloat(level.count) * spacing.width
+            let startX = origin.x - rowWidth / 2 + spacing.width / 2
+
+            for (col, nodeId) in level.enumerated() {
+                if let index = nodes.firstIndex(where: { $0.id == nodeId }) {
+                    nodes[index].position = CGPoint(
+                        x: startX + CGFloat(col) * spacing.width,
+                        y: currentY
+                    )
+                }
+            }
+
+            // Move to next row: current row height + gap
+            currentY += maxRowHeight + verticalGap
+        }
     }
 
     public func removeNode(_ id: UUID) {
@@ -914,24 +1048,50 @@ public final class CanvasState {
             return nil
         }
 
-        // Check inputs
-        if let inputIndex = node.inputs.firstIndex(where: { $0.id == portId }) {
-            let portHeight = node.size.height / CGFloat(node.inputs.count)
-            let portCenterY = portHeight * CGFloat(inputIndex) + portHeight / 2
-            return CGPoint(
-                x: node.position.x,
-                y: node.position.y + portCenterY
-            )
-        }
+        switch layoutMode {
+        case .freeform:
+            // Freeform mode: inputs on left, outputs on right (vertical distribution)
+            // Check inputs
+            if let inputIndex = node.inputs.firstIndex(where: { $0.id == portId }) {
+                let portHeight = node.size.height / CGFloat(node.inputs.count)
+                let portCenterY = portHeight * CGFloat(inputIndex) + portHeight / 2
+                return CGPoint(
+                    x: node.position.x,
+                    y: node.position.y + portCenterY
+                )
+            }
 
-        // Check outputs
-        if let outputIndex = node.outputs.firstIndex(where: { $0.id == portId }) {
-            let portHeight = node.size.height / CGFloat(node.outputs.count)
-            let portCenterY = portHeight * CGFloat(outputIndex) + portHeight / 2
-            return CGPoint(
-                x: node.position.x + node.size.width,
-                y: node.position.y + portCenterY
-            )
+            // Check outputs
+            if let outputIndex = node.outputs.firstIndex(where: { $0.id == portId }) {
+                let portHeight = node.size.height / CGFloat(node.outputs.count)
+                let portCenterY = portHeight * CGFloat(outputIndex) + portHeight / 2
+                return CGPoint(
+                    x: node.position.x + node.size.width,
+                    y: node.position.y + portCenterY
+                )
+            }
+
+        case .vertical:
+            // Vertical mode: inputs on top, outputs on bottom (horizontal distribution)
+            // Check inputs
+            if let inputIndex = node.inputs.firstIndex(where: { $0.id == portId }) {
+                let portWidth = node.size.width / CGFloat(node.inputs.count)
+                let portCenterX = portWidth * CGFloat(inputIndex) + portWidth / 2
+                return CGPoint(
+                    x: node.position.x + portCenterX,
+                    y: node.position.y
+                )
+            }
+
+            // Check outputs
+            if let outputIndex = node.outputs.firstIndex(where: { $0.id == portId }) {
+                let portWidth = node.size.width / CGFloat(node.outputs.count)
+                let portCenterX = portWidth * CGFloat(outputIndex) + portWidth / 2
+                return CGPoint(
+                    x: node.position.x + portCenterX,
+                    y: node.position.y + node.size.height
+                )
+            }
         }
 
         // Port not found - log details for debugging
@@ -943,41 +1103,85 @@ public final class CanvasState {
 
     public func portAt(canvasPoint: CGPoint, tolerance: CGFloat = 15) -> (nodeId: UUID, portId: UUID, isInput: Bool)? {
         for node in nodes {
-            // Check input ports
-            for (index, port) in node.inputs.enumerated() {
-                let portHeight = node.size.height / CGFloat(node.inputs.count)
-                let portCenterY = portHeight * CGFloat(index) + portHeight / 2
-                let portPos = CGPoint(
-                    x: node.position.x,
-                    y: node.position.y + portCenterY
-                )
+            switch layoutMode {
+            case .freeform:
+                // Freeform mode: inputs on left, outputs on right (vertical distribution)
+                // Check input ports
+                for (index, port) in node.inputs.enumerated() {
+                    let portHeight = node.size.height / CGFloat(node.inputs.count)
+                    let portCenterY = portHeight * CGFloat(index) + portHeight / 2
+                    let portPos = CGPoint(
+                        x: node.position.x,
+                        y: node.position.y + portCenterY
+                    )
 
-                let distance = sqrt(
-                    pow(canvasPoint.x - portPos.x, 2) +
-                    pow(canvasPoint.y - portPos.y, 2)
-                )
+                    let distance = sqrt(
+                        pow(canvasPoint.x - portPos.x, 2) +
+                        pow(canvasPoint.y - portPos.y, 2)
+                    )
 
-                if distance <= tolerance {
-                    return (nodeId: node.id, portId: port.id, isInput: true)
+                    if distance <= tolerance {
+                        return (nodeId: node.id, portId: port.id, isInput: true)
+                    }
                 }
-            }
 
-            // Check output ports
-            for (index, port) in node.outputs.enumerated() {
-                let portHeight = node.size.height / CGFloat(node.outputs.count)
-                let portCenterY = portHeight * CGFloat(index) + portHeight / 2
-                let portPos = CGPoint(
-                    x: node.position.x + node.size.width,
-                    y: node.position.y + portCenterY
-                )
+                // Check output ports
+                for (index, port) in node.outputs.enumerated() {
+                    let portHeight = node.size.height / CGFloat(node.outputs.count)
+                    let portCenterY = portHeight * CGFloat(index) + portHeight / 2
+                    let portPos = CGPoint(
+                        x: node.position.x + node.size.width,
+                        y: node.position.y + portCenterY
+                    )
 
-                let distance = sqrt(
-                    pow(canvasPoint.x - portPos.x, 2) +
-                    pow(canvasPoint.y - portPos.y, 2)
-                )
+                    let distance = sqrt(
+                        pow(canvasPoint.x - portPos.x, 2) +
+                        pow(canvasPoint.y - portPos.y, 2)
+                    )
 
-                if distance <= tolerance {
-                    return (nodeId: node.id, portId: port.id, isInput: false)
+                    if distance <= tolerance {
+                        return (nodeId: node.id, portId: port.id, isInput: false)
+                    }
+                }
+
+            case .vertical:
+                // Vertical mode: inputs on top, outputs on bottom (horizontal distribution)
+                // Check input ports
+                for (index, port) in node.inputs.enumerated() {
+                    let portWidth = node.size.width / CGFloat(node.inputs.count)
+                    let portCenterX = portWidth * CGFloat(index) + portWidth / 2
+                    let portPos = CGPoint(
+                        x: node.position.x + portCenterX,
+                        y: node.position.y
+                    )
+
+                    let distance = sqrt(
+                        pow(canvasPoint.x - portPos.x, 2) +
+                        pow(canvasPoint.y - portPos.y, 2)
+                    )
+
+                    if distance <= tolerance {
+                        return (nodeId: node.id, portId: port.id, isInput: true)
+                    }
+                }
+
+                // Check output ports
+                for (index, port) in node.outputs.enumerated() {
+                    let portWidth = node.size.width / CGFloat(node.outputs.count)
+                    let portCenterX = portWidth * CGFloat(index) + portWidth / 2
+                    let portPos = CGPoint(
+                        x: node.position.x + portCenterX,
+                        y: node.position.y + node.size.height
+                    )
+
+                    let distance = sqrt(
+                        pow(canvasPoint.x - portPos.x, 2) +
+                        pow(canvasPoint.y - portPos.y, 2)
+                    )
+
+                    if distance <= tolerance {
+                        return (nodeId: node.id, portId: port.id, isInput: false)
+                    }
                 }
             }
         }

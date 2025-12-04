@@ -149,3 +149,133 @@ The package includes a demo app. Open `Package.swift` in Xcode and run the `WFKi
 ## Dependencies
 
 None. WFKit is dependency-free, using only SwiftUI and Foundation.
+
+## TWF (Talkie Workflow Format) Integration
+
+WFKit can visualize workflows defined in TWF format - a JSON-based workflow definition format designed for voice memo processing pipelines.
+
+### What is TWF?
+
+TWF (Talkie Workflow Format) is a human-readable, LLM-friendly workflow format that uses:
+- **Slug-based IDs** instead of UUIDs (git-friendly, portable)
+- **14 step types** covering AI, integrations, logic, and outputs
+- **Template variables** like `{{TRANSCRIPT}}`, `{{step-id.property}}`
+
+### Sample Workflows
+
+The `Sources/WFKit/Resources/SampleWorkflows/` directory contains:
+
+| File | Complexity | Description |
+|------|------------|-------------|
+| `quick-summary.twf.json` | Simple | Single LLM step |
+| `tweet-summary.twf.json` | Medium | LLM + clipboard + notification |
+| `hq-transcribe.twf.json` | Medium | Local Whisper + LLM polish |
+| `cloud-transcribe.twf.json` | Medium | Shell command + conditional branching |
+| `feature-ideation.twf.json` | Complex | JSON extraction + conditional + reminders |
+| `learning-capture.twf.json` | Complex | Multi-step with Obsidian integration |
+
+### Full Specification
+
+See `TWF_SPEC.md` in the SampleWorkflows directory for:
+- Complete format specification
+- All 14 step types with JSON examples
+- Template variable syntax
+- UUID generation algorithm
+
+### Converting TWF to WFKit
+
+TWF steps map to WFKit node types:
+
+| TWF Step Type | WFKit NodeType | Category |
+|---------------|----------------|----------|
+| LLM Generation | `.llm` | AI |
+| Transcribe Audio | `.llm` | AI |
+| Transform Data | `.transform` | Logic |
+| Conditional Branch | `.condition` | Logic |
+| Send Notification | `.notification` | Output |
+| Notify iPhone | `.notification` | Output |
+| Copy to Clipboard | `.output` | Output |
+| Save to File | `.output` | Output |
+| Create Reminder | `.output` | Apple |
+| Run Shell Command | `.action` | Integration |
+| Trigger Detection | `.trigger` | Trigger |
+| Extract Intents | `.trigger` | Trigger |
+| Execute Workflows | `.trigger` | Trigger |
+
+### Example: Loading TWF into WFKit
+
+```swift
+// 1. Parse TWF JSON
+let twf = try JSONDecoder().decode(TWFWorkflow.self, from: data)
+
+// 2. Convert to WFKit nodes
+var nodes: [WorkflowNode] = []
+for (index, step) in twf.steps.enumerated() {
+    let node = WorkflowNode(
+        id: UUID(slug: "\(twf.slug)/\(step.id)"),  // Deterministic UUID
+        type: mapStepType(step.type),
+        title: step.type,  // e.g., "LLM Generation"
+        position: CGPoint(x: 100 + index * 280, y: 150),
+        configuration: NodeConfiguration(
+            customFields: flattenConfig(step.config)
+        )
+    )
+    nodes.append(node)
+}
+
+// 3. Create connections (linear pipeline)
+var connections: [WorkflowConnection] = []
+for i in 0..<(nodes.count - 1) {
+    connections.append(WorkflowConnection(
+        sourceNodeId: nodes[i].id,
+        targetNodeId: nodes[i + 1].id
+    ))
+}
+
+// 4. Create canvas state
+let canvas = CanvasState()
+canvas.nodes = nodes
+canvas.connections = connections
+```
+
+### TWF Custom Fields
+
+TWF config is nested under type-specific keys. Flatten for WFKit:
+
+```json
+// TWF format
+{
+  "config": {
+    "llm": {
+      "prompt": "Summarize...",
+      "temperature": 0.7
+    }
+  }
+}
+
+// Flattened for WFKit customFields
+{
+  "configType": "llm",
+  "prompt": "Summarize...",
+  "temperature": "0.7"
+}
+```
+
+### Schema for TWF Step Types
+
+Define schema to render TWF configs properly in the inspector:
+
+```swift
+WFNodeTypeSchema(
+    id: "LLM Generation",
+    displayName: "AI Generation",
+    category: "AI",
+    fields: [
+        WFFieldSchema(id: "prompt", displayName: "Prompt", type: .text, order: 0),
+        WFFieldSchema(id: "systemPrompt", displayName: "System Prompt", type: .text, order: 1),
+        WFFieldSchema(id: "costTier", displayName: "Cost Tier", type: .picker(["budget", "balanced", "capable"]), order: 2),
+        WFFieldSchema(id: "temperature", displayName: "Temperature", type: .slider(min: 0, max: 2, step: 0.1), order: 3),
+        WFFieldSchema(id: "maxTokens", displayName: "Max Tokens", type: .number, order: 4),
+    ]
+)
+```

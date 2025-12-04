@@ -24,10 +24,11 @@ public struct NodeView: View {
     @State private var hoverEdge: HoverEdge? = nil
     @State private var hideEdgeWorkItem: DispatchWorkItem? = nil
     @Environment(\.wfTheme) private var theme
+    @Environment(\.wfLayoutMode) private var layoutMode
 
     // Edge proximity detection
     private enum HoverEdge {
-        case left, right
+        case left, right, top, bottom
     }
 
     // How close to edge (in points) to trigger port reveal
@@ -93,39 +94,65 @@ public struct NodeView: View {
             }
             .frame(width: node.size.width, height: node.size.height)
 
-            // Input ports - positioned at left edge (50/50 overlap with edge)
+            // Input ports - positioned based on layout mode
             inputPorts
                 .opacity(showPorts ? 1 : 0)
                 .allowsHitTesting(showPorts)
                 .animation(.easeOut(duration: 0.15), value: showPorts)
-                .offset(x: -node.size.width / 2)
+                .offset(
+                    x: layoutMode == .vertical ? 0 : -node.size.width / 2,
+                    y: layoutMode == .vertical ? -node.size.height / 2 : 0
+                )
 
-            // Output ports - positioned at right edge (50/50 overlap with edge)
+            // Output ports - positioned based on layout mode
             outputPorts
                 .opacity(showPorts ? 1 : 0)
                 .allowsHitTesting(showPorts)
                 .animation(.easeOut(duration: 0.15), value: showPorts)
-                .offset(x: node.size.width / 2)
+                .offset(
+                    x: layoutMode == .vertical ? 0 : node.size.width / 2,
+                    y: layoutMode == .vertical ? node.size.height / 2 : 0
+                )
         }
         // Expand frame to include port hit areas
-        .frame(width: node.size.width + portExtension * 2, height: node.size.height)
+        .frame(
+            width: node.size.width + (layoutMode == .freeform ? portExtension * 2 : 0),
+            height: node.size.height + (layoutMode == .vertical ? portExtension * 2 : 0)
+        )
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):
                 // Adjust location to be relative to node bounds (not the expanded frame)
-                let adjustedX = location.x - portExtension
+                let adjustedX = location.x - (layoutMode == .freeform ? portExtension : 0)
+                let adjustedY = location.y - (layoutMode == .vertical ? portExtension : 0)
 
-                // Calculate which edge is closest based on cursor position
-                let distanceToLeft = adjustedX
-                let distanceToRight = node.size.width - adjustedX
-
+                // Calculate which edge is closest based on cursor position and layout mode
                 let newEdge: HoverEdge?
-                if distanceToLeft < edgeRevealThreshold {
-                    newEdge = .left
-                } else if distanceToRight < edgeRevealThreshold {
-                    newEdge = .right
+
+                if layoutMode == .vertical {
+                    // Vertical mode: check top/bottom edges
+                    let distanceToTop = adjustedY
+                    let distanceToBottom = node.size.height - adjustedY
+
+                    if distanceToTop < edgeRevealThreshold {
+                        newEdge = .top
+                    } else if distanceToBottom < edgeRevealThreshold {
+                        newEdge = .bottom
+                    } else {
+                        newEdge = nil
+                    }
                 } else {
-                    newEdge = nil
+                    // Freeform mode: check left/right edges
+                    let distanceToLeft = adjustedX
+                    let distanceToRight = node.size.width - adjustedX
+
+                    if distanceToLeft < edgeRevealThreshold {
+                        newEdge = .left
+                    } else if distanceToRight < edgeRevealThreshold {
+                        newEdge = .right
+                    } else {
+                        newEdge = nil
+                    }
                 }
 
                 if let edge = newEdge {
@@ -225,37 +252,53 @@ public struct NodeView: View {
 
     @ViewBuilder
     private var nodeBackground: some View {
-        RoundedRectangle(cornerRadius: theme.nodeRadius)
-            .fill(theme.nodeBackground)
-            .overlay(
-                Group {
-                    if theme.showNodeBorder {
-                        RoundedRectangle(cornerRadius: theme.nodeRadius)
-                            .strokeBorder(
-                                isSelected
-                                    ? node.effectiveColor
-                                    : (isHovered ? theme.nodeBorderHover : theme.nodeBorder),
-                                lineWidth: isSelected ? theme.nodeBorderWidth + 0.5 : theme.nodeBorderWidth
-                            )
+        if theme.useOutlineStyle {
+            // Minimal style: transparent background with thin border only
+            RoundedRectangle(cornerRadius: theme.nodeRadius)
+                .fill(theme.isDark ? Color(hex: "0A0A0A") : Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.nodeRadius)
+                        .strokeBorder(
+                            isSelected
+                                ? theme.textSecondary
+                                : (isHovered ? theme.nodeBorderHover : theme.nodeBorderMinimal),
+                            lineWidth: theme.outlineBorderWidth
+                        )
+                )
+        } else {
+            // Standard style: filled background with shadow
+            RoundedRectangle(cornerRadius: theme.nodeRadius)
+                .fill(theme.nodeBackground)
+                .overlay(
+                    Group {
+                        if theme.showNodeBorder {
+                            RoundedRectangle(cornerRadius: theme.nodeRadius)
+                                .strokeBorder(
+                                    isSelected
+                                        ? node.effectiveColor
+                                        : (isHovered ? theme.nodeBorderHover : theme.nodeBorder),
+                                    lineWidth: isSelected ? theme.nodeBorderWidth + 0.5 : theme.nodeBorderWidth
+                                )
+                        }
                     }
-                }
-            )
-            .shadow(
-                color: theme.showNodeGlow
-                    ? (isSelected ? node.effectiveColor.opacity(0.25) : (theme.isDark ? Color.black.opacity(0.3) : Color.black.opacity(0.15)))
-                    : Color.clear,
-                radius: isSelected ? 8 : 4,
-                x: 0,
-                y: isSelected ? 4 : 2
-            )
-            .shadow(
-                color: theme.showNodeGlow
-                    ? (theme.isDark ? Color.black.opacity(0.2) : Color.black.opacity(0.1))
-                    : Color.clear,
-                radius: 2,
-                x: 0,
-                y: 1
-            )
+                )
+                .shadow(
+                    color: theme.showNodeGlow
+                        ? (isSelected ? node.effectiveColor.opacity(0.25) : (theme.isDark ? Color.black.opacity(0.3) : Color.black.opacity(0.15)))
+                        : Color.clear,
+                    radius: isSelected ? 8 : 4,
+                    x: 0,
+                    y: isSelected ? 4 : 2
+                )
+                .shadow(
+                    color: theme.showNodeGlow
+                        ? (theme.isDark ? Color.black.opacity(0.2) : Color.black.opacity(0.1))
+                        : Color.clear,
+                    radius: 2,
+                    x: 0,
+                    y: 1
+                )
+        }
     }
 
     // MARK: - Node Header
@@ -263,11 +306,16 @@ public struct NodeView: View {
     @ViewBuilder
     private var nodeHeader: some View {
         HStack(spacing: 8) {
+            // Icon badge - grayscale for minimal, colored for other styles
             Image(systemName: node.type.icon)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(theme.isDark ? Color(hex: "0D0D0D") : Color(hex: "1A1A1A"))
+                .foregroundColor(theme.useOutlineStyle
+                    ? theme.textSecondary
+                    : (theme.isDark ? Color(hex: "0D0D0D") : Color(hex: "1A1A1A")))
                 .frame(width: 20, height: 20)
-                .background(node.effectiveColor)
+                .background(theme.useOutlineStyle
+                    ? theme.nodeBorderMinimal
+                    : node.effectiveColor)
                 .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
                 .scaleEffect(counterScale, anchor: .leading)
 
@@ -285,21 +333,39 @@ public struct NodeView: View {
                 .foregroundColor(theme.textSecondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(theme.sectionBackground.opacity(0.8))
+                .background(theme.useOutlineStyle
+                    ? Color.clear
+                    : theme.sectionBackground.opacity(0.8))
+                .overlay(
+                    Group {
+                        if theme.useOutlineStyle {
+                            RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4))
+                                .strokeBorder(theme.nodeBorderMinimal, lineWidth: 0.5)
+                        }
+                    }
+                )
                 .clipShape(RoundedRectangle(cornerRadius: max(2, theme.nodeRadius / 4)))
                 .scaleEffect(counterScale, anchor: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    node.effectiveColor.opacity(0.12),
-                    node.effectiveColor.opacity(0.06)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            Group {
+                if theme.useOutlineStyle {
+                    // Minimal: no colored gradient, just subtle gray
+                    Color.clear
+                } else {
+                    // Standard: colored gradient
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            node.effectiveColor.opacity(0.12),
+                            node.effectiveColor.opacity(0.06)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
         )
         .clipShape(
             UnevenRoundedRectangle(
@@ -311,8 +377,10 @@ public struct NodeView: View {
         )
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(node.effectiveColor.opacity(0.2))
-                .frame(height: 1)
+                .fill(theme.useOutlineStyle
+                    ? theme.nodeBorderMinimal
+                    : node.effectiveColor.opacity(0.2))
+                .frame(height: theme.useOutlineStyle ? 0.5 : 1)
         }
     }
 
@@ -441,23 +509,45 @@ public struct NodeView: View {
     @ViewBuilder
     private var inputPorts: some View {
         if !node.inputs.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(Array(node.inputs.enumerated()), id: \.element.id) { index, port in
-                    PortView(
-                        port: port,
-                        nodeId: node.id,
-                        color: node.effectiveColor,
-                        canvasState: canvasState,
-                        scale: scale,
-                        onDragStart: onPortDragStart,
-                        onDragUpdate: onPortDragUpdate,
-                        onDragEnd: onPortDragEnd,
-                        onHover: onPortHover
-                    )
-                    .frame(height: node.size.height / CGFloat(node.inputs.count))
+            if layoutMode == .vertical {
+                // Horizontal arrangement for vertical mode (top edge)
+                HStack(spacing: 0) {
+                    ForEach(Array(node.inputs.enumerated()), id: \.element.id) { index, port in
+                        PortView(
+                            port: port,
+                            nodeId: node.id,
+                            color: node.effectiveColor,
+                            canvasState: canvasState,
+                            scale: scale,
+                            onDragStart: onPortDragStart,
+                            onDragUpdate: onPortDragUpdate,
+                            onDragEnd: onPortDragEnd,
+                            onHover: onPortHover
+                        )
+                        .frame(width: node.size.width / CGFloat(node.inputs.count))
+                    }
                 }
+                .frame(height: portSize * 3 + portExtension)
+            } else {
+                // Vertical arrangement for freeform mode (left edge)
+                VStack(spacing: 0) {
+                    ForEach(Array(node.inputs.enumerated()), id: \.element.id) { index, port in
+                        PortView(
+                            port: port,
+                            nodeId: node.id,
+                            color: node.effectiveColor,
+                            canvasState: canvasState,
+                            scale: scale,
+                            onDragStart: onPortDragStart,
+                            onDragUpdate: onPortDragUpdate,
+                            onDragEnd: onPortDragEnd,
+                            onHover: onPortHover
+                        )
+                        .frame(height: node.size.height / CGFloat(node.inputs.count))
+                    }
+                }
+                .frame(width: portSize * 3 + portExtension)
             }
-            .frame(width: portSize * 3 + portExtension)
         }
     }
 
@@ -466,23 +556,45 @@ public struct NodeView: View {
     @ViewBuilder
     private var outputPorts: some View {
         if !node.outputs.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(Array(node.outputs.enumerated()), id: \.element.id) { index, port in
-                    PortView(
-                        port: port,
-                        nodeId: node.id,
-                        color: node.effectiveColor,
-                        canvasState: canvasState,
-                        scale: scale,
-                        onDragStart: onPortDragStart,
-                        onDragUpdate: onPortDragUpdate,
-                        onDragEnd: onPortDragEnd,
-                        onHover: onPortHover
-                    )
-                    .frame(height: node.size.height / CGFloat(node.outputs.count))
+            if layoutMode == .vertical {
+                // Horizontal arrangement for vertical mode (bottom edge)
+                HStack(spacing: 0) {
+                    ForEach(Array(node.outputs.enumerated()), id: \.element.id) { index, port in
+                        PortView(
+                            port: port,
+                            nodeId: node.id,
+                            color: node.effectiveColor,
+                            canvasState: canvasState,
+                            scale: scale,
+                            onDragStart: onPortDragStart,
+                            onDragUpdate: onPortDragUpdate,
+                            onDragEnd: onPortDragEnd,
+                            onHover: onPortHover
+                        )
+                        .frame(width: node.size.width / CGFloat(node.outputs.count))
+                    }
                 }
+                .frame(height: portSize * 3 + portExtension)
+            } else {
+                // Vertical arrangement for freeform mode (right edge)
+                VStack(spacing: 0) {
+                    ForEach(Array(node.outputs.enumerated()), id: \.element.id) { index, port in
+                        PortView(
+                            port: port,
+                            nodeId: node.id,
+                            color: node.effectiveColor,
+                            canvasState: canvasState,
+                            scale: scale,
+                            onDragStart: onPortDragStart,
+                            onDragUpdate: onPortDragUpdate,
+                            onDragEnd: onPortDragEnd,
+                            onHover: onPortHover
+                        )
+                        .frame(height: node.size.height / CGFloat(node.outputs.count))
+                    }
+                }
+                .frame(width: portSize * 3 + portExtension)
             }
-            .frame(width: portSize * 3 + portExtension)
         }
     }
 }
@@ -535,16 +647,14 @@ struct PortView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 if !port.isInput {
                     Spacer()
-                    portLabel
                 }
 
                 portCircle
 
                 if port.isInput {
-                    portLabel
                     Spacer()
                 }
             }
@@ -613,12 +723,12 @@ struct PortView: View {
         }
         .frame(width: portSize + 20, height: portSize + 20)
         .contentShape(Rectangle())
-        .scaleEffect(portScale)
+        // No scaleEffect - position stays consistent across all states
         .opacity(portOpacity)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isValidDropTarget)
-        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isSnapped)
-        .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isValidDropTarget)
+        .animation(.easeInOut(duration: 0.15), value: isSnapped)
+        .animation(.easeInOut(duration: 0.15), value: isConnectionDragActive)
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -718,46 +828,11 @@ struct PortView: View {
         }
     }
 
-    private var portScale: CGFloat {
-        if isSnapped {
-            return 1.4
-        } else if isValidDropTarget {
-            return 1.25
-        } else if isHovered || isDragging {
-            return 1.15
-        } else if isInvalidDuringDrag {
-            return 0.9
-        } else {
-            return 1.0
-        }
-    }
-
     private var portOpacity: CGFloat {
         if isInvalidDuringDrag {
             return 0.4
         } else {
             return 1.0
-        }
-    }
-
-    @ViewBuilder
-    private var portLabel: some View {
-        Text(port.label)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundColor(labelColor)
-            .opacity(isInvalidDuringDrag ? 0.4 : 1.0)
-            .scaleEffect(counterScale)
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
-            .animation(.easeInOut(duration: 0.2), value: isConnectionDragActive)
-    }
-
-    private var labelColor: Color {
-        if isValidDropTarget || isSnapped {
-            return Color.green
-        } else if isHovered {
-            return theme.textSecondary
-        } else {
-            return theme.textTertiary
         }
     }
 }

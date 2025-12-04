@@ -27,11 +27,41 @@ public enum WFAppearance: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Connection Style
+
+public enum WFConnectionStyle: String, CaseIterable, Identifiable, Sendable {
+    case bezier      // Smooth S-curve (current)
+    case straight    // Direct line
+    case step        // Right-angle orthogonal
+    case smoothStep  // Orthogonal with rounded corners
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .bezier: return "Bezier"
+        case .straight: return "Straight"
+        case .step: return "Step"
+        case .smoothStep: return "Smooth Step"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .bezier: return "point.topleft.down.to.point.bottomright.curvepath"
+        case .straight: return "line.diagonal"
+        case .step: return "arrow.turn.right.down"
+        case .smoothStep: return "point.topleft.down.to.point.bottomright.curvepath.fill"
+        }
+    }
+}
+
 // MARK: - Style Presets
 
 public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
     case standard
     case technical
+    case minimal
     case soft
     case neon
 
@@ -41,6 +71,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "Standard"
         case .technical: return "Technical"
+        case .minimal: return "Minimal"
         case .soft: return "Soft"
         case .neon: return "Neon"
         }
@@ -50,6 +81,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "Balanced, rounded corners"
         case .technical: return "Sharp edges, monospace"
+        case .minimal: return "Pure grayscale, ultra-clean"
         case .soft: return "Extra rounded, warm tones"
         case .neon: return "Cyberpunk, glowing accents"
         }
@@ -59,6 +91,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "square.on.square"
         case .technical: return "terminal"
+        case .minimal: return "square.dashed"
         case .soft: return "cloud"
         case .neon: return "bolt.fill"
         }
@@ -69,6 +102,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return 10
         case .technical: return 2
+        case .minimal: return 0           // Sharp edges, no rounding
         case .soft: return 16
         case .neon: return 4
         }
@@ -78,6 +112,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return 8
         case .technical: return 0
+        case .minimal: return 0           // Sharp edges
         case .soft: return 12
         case .neon: return 2
         }
@@ -87,6 +122,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return 6
         case .technical: return 2
+        case .minimal: return 0           // Sharp edges
         case .soft: return 10
         case .neon: return 2
         }
@@ -96,6 +132,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return nil
         case .technical: return "SF Mono"
+        case .minimal: return "SF Mono"   // Monospace for technical look
         case .soft: return nil
         case .neon: return "SF Mono"
         }
@@ -104,7 +141,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
     public var useMonospace: Bool {
         switch self {
         case .standard, .soft: return false
-        case .technical, .neon: return true
+        case .technical, .minimal, .neon: return true
         }
     }
 
@@ -112,17 +149,19 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
     public var nodeTitleSize: CGFloat {
         switch self {
         case .standard: return 13
-        case .technical: return 11      // Compact
-        case .soft: return 14           // Comfortable
-        case .neon: return 12           // Slightly smaller monospace
+        case .technical: return 11        // Compact
+        case .minimal: return 11          // Compact, same as technical
+        case .soft: return 14             // Comfortable
+        case .neon: return 12             // Slightly smaller monospace
         }
     }
 
     public var nodeSubtitleSize: CGFloat {
         switch self {
         case .standard: return 11
-        case .technical: return 10      // Compact
-        case .soft: return 12           // Comfortable
+        case .technical: return 10        // Compact
+        case .minimal: return 10          // Compact
+        case .soft: return 12             // Comfortable
         case .neon: return 10
         }
     }
@@ -131,6 +170,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return 13
         case .technical: return 12
+        case .minimal: return 12
         case .soft: return 14
         case .neon: return 12
         }
@@ -138,10 +178,11 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
 
     public var accentHex: String {
         switch self {
-        case .standard: return "0A84FF"  // Blue
-        case .technical: return "00FF88" // Matrix green
-        case .soft: return "FF9F0A"      // Warm orange
-        case .neon: return "FFE500"      // Electric yellow
+        case .standard: return "0A84FF"   // Blue
+        case .technical: return "00FF88"  // Matrix green
+        case .minimal: return "8A8A8A"    // Medium gray - no color
+        case .soft: return "FF9F0A"       // Warm orange
+        case .neon: return "FFE500"       // Electric yellow
         }
     }
 
@@ -149,8 +190,9 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "0084FF"
         case .technical: return "00FF88"
+        case .minimal: return "A0A0A0"    // Slightly lighter gray
         case .soft: return "FFBF4A"
-        case .neon: return "FFFF44"      // Bright yellow glow
+        case .neon: return "FFFF44"       // Bright yellow glow
         }
     }
 
@@ -159,6 +201,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "0D0D0D"   // Dark grey
         case .technical: return "000000"  // Pure black
+        case .minimal: return "0A0A0A"    // Near pure black
         case .soft: return "0F0A0A"       // Very dark warm
         case .neon: return "050505"       // Near black (dark background for contrast)
         }
@@ -168,6 +211,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "F5F5F5"   // Light gray
         case .technical: return "FAFAFA"  // Near white
+        case .minimal: return "FFFFFF"    // Pure white
         case .soft: return "FBF8F5"       // Warm white
         case .neon: return "FFFCF0"       // Light yellow tint
         }
@@ -177,6 +221,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "2A2A2A"   // Gray dots
         case .technical: return "505050"  // Light grey dots on black
+        case .minimal: return "1F1F1F"    // Very subtle dots
         case .soft: return "3A2A2A"       // Warm-tinted dots
         case .neon: return "3A3000"       // Yellow/amber dots
         }
@@ -186,6 +231,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return "D5D5D5"   // Gray dots
         case .technical: return "C0C0C0"  // Medium gray dots
+        case .minimal: return "E8E8E8"    // Very subtle dots on white
         case .soft: return "E5D5D0"       // Warm-tinted dots
         case .neon: return "E5D080"       // Yellow/gold dots
         }
@@ -195,6 +241,7 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return 1.5        // Normal dots
         case .technical: return 1.0       // Small precise dots
+        case .minimal: return 0.5         // Tiny, barely visible dots
         case .soft: return 2.0            // Larger softer dots
         case .neon: return 1.5            // Normal with glow
         }
@@ -210,8 +257,36 @@ public enum WFStyle: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard: return .circle
         case .technical: return .plus     // Technical crosshairs
+        case .minimal: return .circle     // Clean simple dots
         case .soft: return .circle
         case .neon: return .circle
+        }
+    }
+
+    // Whether to use outlines instead of filled backgrounds
+    public var useOutlineStyle: Bool {
+        switch self {
+        case .minimal: return true        // No fills, just borders
+        default: return false
+        }
+    }
+
+    // Border width for outline style
+    public var outlineBorderWidth: CGFloat {
+        switch self {
+        case .minimal: return 1.0         // Thin, precise borders
+        default: return 1.0
+        }
+    }
+
+    // Connection curve style
+    public var connectionStyle: WFConnectionStyle {
+        switch self {
+        case .standard: return .bezier    // Smooth curves
+        case .technical: return .step     // 90-degree angles (circuit-like)
+        case .minimal: return .straight   // Direct lines
+        case .soft: return .smoothStep    // Rounded orthogonal
+        case .neon: return .bezier        // Smooth glowing curves
         }
     }
 }
@@ -250,6 +325,9 @@ public final class WFThemeManager {
 
     /// Node border width
     public var nodeBorderWidth: CGFloat = 1.0
+
+    /// Optional override for connection style (overrides theme default)
+    public var connectionStyleOverride: WFConnectionStyle? = nil
 
     /// Show flow animation on connections
     public var showConnectionFlow: Bool = true
@@ -396,6 +474,30 @@ public final class WFThemeManager {
     public var panelRadius: CGFloat { style.panelRadius }
     public var inputRadius: CGFloat { style.inputRadius }
     public var buttonRadius: CGFloat { style.inputRadius }
+
+    // MARK: - Style-specific rendering
+
+    /// Whether nodes should use outline style (no fills, just borders)
+    public var useOutlineStyle: Bool { style.useOutlineStyle }
+
+    /// Border width for outline style
+    public var outlineBorderWidth: CGFloat { style.outlineBorderWidth }
+
+    /// Connection curve style (bezier, straight, step, smoothStep)
+    /// Uses override if set, otherwise falls back to theme default
+    public var connectionStyle: WFConnectionStyle {
+        connectionStyleOverride ?? style.connectionStyle
+    }
+
+    /// Node background for minimal/outline style (transparent or very subtle)
+    public var nodeBackgroundMinimal: Color {
+        isDark ? Color.clear : Color.clear
+    }
+
+    /// Node border color for minimal style
+    public var nodeBorderMinimal: Color {
+        isDark ? Color(hex: "3A3A3A") : Color(hex: "C0C0C0")
+    }
 
     // MARK: - Typography (style-dependent)
 
