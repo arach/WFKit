@@ -13,6 +13,18 @@ extension EnvironmentValues {
     }
 }
 
+// MARK: - Inspector Style
+
+/// Controls how the inspector is displayed in WFWorkflowEditor
+public enum WFInspectorStyle {
+    /// Uses SwiftUI's .inspector() modifier - requires WindowGroup context
+    case system
+    /// Uses HStack layout - works in modals, sheets, and panels
+    case inline
+    /// No inspector
+    case none
+}
+
 // MARK: - WFWorkflowEditor
 
 /// The main workflow editor component.
@@ -27,65 +39,102 @@ extension EnvironmentValues {
 ///
 /// // Read-only mode (for visualization only)
 /// WFWorkflowEditor(state: canvasState, isReadOnly: true)
+///
+/// // With schema (for structured field display)
+/// WFWorkflowEditor(state: canvasState, schema: MyAppSchema())
+///
+/// // In a modal/sheet context (use inline inspector)
+/// WFWorkflowEditor(state: canvasState, inspectorStyle: .inline)
 /// ```
 public struct WFWorkflowEditor: View {
     @Bindable var state: CanvasState
     let isReadOnly: Bool
-    @State private var showNodePalette: Bool = false
-    @State private var showInspector: Bool = true
+    let schema: (any WFSchemaProvider)?
+    let inspectorStyle: WFInspectorStyle
+    @Binding var showInspector: Bool
     @Environment(\.wfTheme) private var theme
 
-    public init(state: CanvasState, isReadOnly: Bool = false) {
+    public init(
+        state: CanvasState,
+        schema: (any WFSchemaProvider)? = nil,
+        isReadOnly: Bool = false,
+        inspectorStyle: WFInspectorStyle = .system,
+        showInspector: Binding<Bool> = .constant(true)
+    ) {
         self.state = state
+        self.schema = schema
         self.isReadOnly = isReadOnly
+        self.inspectorStyle = inspectorStyle
+        self._showInspector = showInspector
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            // Toolbar (hidden in read-only mode)
-            if !isReadOnly {
-                ToolbarView(state: state, showNodePalette: $showNodePalette)
-
-                // Divider
-                Rectangle()
-                    .fill(theme.divider)
-                    .frame(height: 1)
+        Group {
+            switch inspectorStyle {
+            case .system:
+                systemInspectorLayout
+            case .inline:
+                inlineInspectorLayout
+            case .none:
+                canvasOnly
             }
-
-            // Canvas
-            WorkflowCanvas(state: state)
-        }
-        .inspector(isPresented: $showInspector) {
-            InspectorView(state: state, isVisible: $showInspector)
-                .inspectorColumnWidth(min: 250, ideal: 350, max: 600)
         }
         .environment(\.wfReadOnly, isReadOnly)
-        .background(theme.canvasBackground)
+        .environment(\.wfSchema, schema)
         .onChange(of: state.selectedNodeIds) { _, newSelection in
-            // Auto-show inspector when a node is selected (only in edit mode)
-            if !isReadOnly && !newSelection.isEmpty && !showInspector {
+            // Auto-show inspector when a node is selected
+            if !newSelection.isEmpty && !showInspector && inspectorStyle != .none {
                 showInspector = true
             }
         }
-        .toolbar {
-            // Only show inspector toggle in edit mode
-            if !isReadOnly {
-                ToolbarItem(placement: .navigation) {
-                    Button(action: { showInspector.toggle() }) {
-                        Image(systemName: showInspector ? "sidebar.right" : "sidebar.right")
-                            .symbolVariant(showInspector ? .fill : .none)
-                    }
-                    .help(showInspector ? "Hide Inspector" : "Show Inspector")
-                }
+    }
+
+    // MARK: - Layout Variants
+
+    /// Canvas with system .inspector() modifier - requires WindowGroup
+    @ViewBuilder
+    private var systemInspectorLayout: some View {
+        WorkflowCanvas(state: state)
+            .inspector(isPresented: $showInspector) {
+                InspectorView(state: state, isVisible: $showInspector)
+                    .inspectorColumnWidth(min: 280, ideal: 320, max: 400)
+            }
+    }
+
+    /// Canvas with inline HStack inspector - works in modals/sheets
+    @ViewBuilder
+    private var inlineInspectorLayout: some View {
+        HStack(spacing: 0) {
+            WorkflowCanvas(state: state)
+
+            if showInspector {
+                Rectangle()
+                    .fill(theme.divider)
+                    .frame(width: 1)
+
+                InspectorView(state: state, isVisible: $showInspector)
+                    .frame(width: 320)
             }
         }
+    }
+
+    /// Canvas only, no inspector
+    @ViewBuilder
+    private var canvasOnly: some View {
+        WorkflowCanvas(state: state)
     }
 }
 
 // MARK: - Preview
 
-#Preview("WFWorkflowEditor") {
-    WFWorkflowEditor(state: CanvasState.sampleState())
+#Preview("WFWorkflowEditor - System Inspector") {
+    WFWorkflowEditor(state: CanvasState.sampleState(), inspectorStyle: .system)
+        .frame(width: 1200, height: 800)
+        .environment(WFThemeManager())
+}
+
+#Preview("WFWorkflowEditor - Inline Inspector") {
+    WFWorkflowEditor(state: CanvasState.sampleState(), inspectorStyle: .inline)
         .frame(width: 1200, height: 800)
         .environment(WFThemeManager())
 }

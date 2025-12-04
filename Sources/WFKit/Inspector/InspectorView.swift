@@ -8,6 +8,7 @@ public struct InspectorView: View {
     @State private var expandedSections: Set<String> = ["node", "config", "details"]
     @Environment(\.wfTheme) private var theme
     @Environment(\.wfReadOnly) private var isReadOnly
+    @Environment(\.wfSchema) private var schema
 
     public init(state: CanvasState, isVisible: Binding<Bool>) {
         self.state = state
@@ -61,8 +62,7 @@ public struct InspectorView: View {
                     }
                     .padding(.vertical, 12)
                 }
-                .scrollIndicators(.automatic)
-                .preferredColorScheme(theme.isDark ? .dark : .light)
+                .scrollIndicators(.visible)
             } else if state.selectedNodeIds.count > 1 {
                 multiSelectionView
             } else {
@@ -71,6 +71,7 @@ public struct InspectorView: View {
         }
         .frame(minWidth: 300, idealWidth: 350, maxWidth: .infinity)
         .background(theme.panelBackground)
+        .preferredColorScheme(theme.isDark ? .dark : .light)
     }
 
     // MARK: - Header
@@ -660,30 +661,178 @@ public struct InspectorView: View {
             .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
     }
 
-    // MARK: - Custom Fields Section (Read-Only Display)
+    // MARK: - Custom Fields Section (Schema-Aware Display)
 
     @ViewBuilder
     private func customFieldsSection(_ customFields: [String: String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(customFields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                customFieldRow(key: key, value: value)
+            // Try to get schema for the selected node
+            if let node = state.singleSelectedNode,
+               let nodeTypeSchema = resolveSchema(for: node, customFields: customFields) {
+                // Use schema-ordered fields
+                schemaOrderedFieldsView(customFields: customFields, nodeTypeSchema: nodeTypeSchema)
+            } else {
+                // Fallback: show all customFields alphabetically
+                ForEach(customFields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    customFieldRow(key: key, value: value, fieldSchema: nil)
+                }
+            }
+        }
+    }
+
+    /// Resolve schema for a node, trying multiple identifiers
+    private func resolveSchema(for node: WorkflowNode, customFields: [String: String]) -> WFNodeTypeSchema? {
+        guard let schema = schema else { return nil }
+
+        // Try 1: actionType from configuration (most specific)
+        if let actionType = node.configuration.actionType,
+           let found = schema.schema(for: actionType) {
+            return found
+        }
+
+        // Try 2: configType from customFields
+        if let configType = customFields["configType"],
+           let found = schema.schema(for: configType) {
+            return found
+        }
+
+        // Try 3: Generic node type
+        if let found = schema.schema(for: node.type.rawValue) {
+            return found
+        }
+
+        return nil
+    }
+
+    @ViewBuilder
+    private func schemaOrderedFieldsView(customFields: [String: String], nodeTypeSchema: WFNodeTypeSchema) -> some View {
+        // Group fields by their group property
+        let groupedFields = Dictionary(grouping: nodeTypeSchema.fields) { $0.group ?? "" }
+        let sortedGroups = groupedFields.keys.sorted()
+
+        ForEach(sortedGroups, id: \.self) { group in
+            if !group.isEmpty {
+                // Group header
+                Text(group.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .default))
+                    .tracking(0.5)
+                    .foregroundColor(theme.textTertiary)
+                    .padding(.top, 8)
+            }
+
+            // Fields in this group, sorted by order
+            let fieldsInGroup = (groupedFields[group] ?? []).sorted { $0.order < $1.order }
+            ForEach(fieldsInGroup) { fieldSchema in
+                // Skip hidden fields
+                if case .hidden = fieldSchema.type {
+                    EmptyView()
+                } else if let value = customFields[fieldSchema.id] {
+                    customFieldRow(key: fieldSchema.id, value: value, fieldSchema: fieldSchema, customFields: customFields)
+                } else if case .objectArray = fieldSchema.type {
+                    // Object arrays may not have a direct value but have nested keys
+                    customFieldRow(key: fieldSchema.id, value: "", fieldSchema: fieldSchema, customFields: customFields)
+                }
+            }
+        }
+
+        // Show any remaining fields not in schema
+        let schemaFieldIds = Set(nodeTypeSchema.fields.map { $0.id })
+        let unmappedFields = customFields.filter { !schemaFieldIds.contains($0.key) }
+        if !unmappedFields.isEmpty {
+            Text("OTHER")
+                .font(.system(size: 8, weight: .bold, design: .default))
+                .tracking(0.5)
+                .foregroundColor(theme.textTertiary)
+                .padding(.top, 8)
+
+            ForEach(unmappedFields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                customFieldRow(key: key, value: value, fieldSchema: nil)
             }
         }
     }
 
     @ViewBuilder
-    private func customFieldRow(key: String, value: String) -> some View {
-        let displayKey = formatFieldKey(key)
-        let isLongValue = value.count > 50 || value.contains("\n")
+    private func customFieldRow(key: String, value: String, fieldSchema: WFFieldSchema?, customFields: [String: String]? = nil) -> some View {
+        if let schema = fieldSchema {
+            switch schema.type {
+            case .objectArray(let objectSchema):
+                // Object array with full schema
+                let items = ObjectArrayFieldView.parseItems(
+                    from: customFields ?? [:],
+                    fieldId: key,
+                    schema: objectSchema
+                )
+                ObjectArrayFieldView(
+                    fieldSchema: schema,
+                    objectSchema: objectSchema,
+                    items: items,
+                    isReadOnly: true
+                )
+
+            case .stringArray(let options):
+                // Simple string array
+                let items = StringArrayFieldView.parseItems(
+                    from: customFields ?? [:],
+                    fieldId: key
+                )
+                StringArrayFieldView(
+                    fieldSchema: schema,
+                    options: options,
+                    items: items,
+                    isReadOnly: true
+                )
+
+            case .keyValueArray(let options):
+                // Key-value pairs
+                let items = KeyValueArrayFieldView.parseItems(
+                    from: customFields ?? [:],
+                    fieldId: key
+                )
+                KeyValueArrayFieldView(
+                    fieldSchema: schema,
+                    options: options,
+                    items: items,
+                    isReadOnly: true
+                )
+
+            default:
+                // Standard field rendering
+                standardFieldRow(key: key, value: value, fieldSchema: fieldSchema)
+            }
+        } else {
+            // No schema, use standard rendering
+            standardFieldRow(key: key, value: value, fieldSchema: fieldSchema)
+        }
+    }
+
+    @ViewBuilder
+    private func standardFieldRow(key: String, value: String, fieldSchema: WFFieldSchema?) -> some View {
+        let displayKey = fieldSchema?.displayName ?? formatFieldKey(key)
+        let isLongValue = value.count > 50 || value.contains("\n") || (fieldSchema.map { isMultilineField($0.type) } ?? false)
 
         VStack(alignment: .leading, spacing: 4) {
-            Text(displayKey)
-                .font(.system(size: 9, weight: .medium, design: .default))
-                .tracking(0.3)
-                .foregroundColor(theme.textTertiary)
-                .textCase(.uppercase)
+            HStack(spacing: 4) {
+                Text(displayKey)
+                    .font(.system(size: 9, weight: .medium, design: .default))
+                    .tracking(0.3)
+                    .foregroundColor(theme.textTertiary)
+                    .textCase(.uppercase)
 
-            if isLongValue {
+                if let helpText = fieldSchema?.helpText {
+                    Button(action: {}) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 9))
+                            .foregroundColor(theme.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(helpText)
+                }
+            }
+
+            // Check for boolean type - render with checkbox style
+            if let schema = fieldSchema, case .boolean = schema.type {
+                booleanFieldDisplay(value: value)
+            } else if isLongValue {
                 // Multi-line text area for long values
                 Text(value)
                     .font(.system(size: 11, design: .monospaced))
@@ -713,6 +862,40 @@ public struct InspectorView: View {
                     )
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func booleanFieldDisplay(value: String) -> some View {
+        let isTrue = value == "true" || value == "1" || value.lowercased() == "yes"
+        HStack(spacing: 6) {
+            Image(systemName: isTrue ? "checkmark.square.fill" : "square")
+                .font(.system(size: 14))
+                .foregroundColor(isTrue ? theme.accent : theme.textTertiary)
+            Text(isTrue ? "Yes" : "No")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(theme.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(theme.inputBackground)
+        .clipShape(RoundedRectangle(cornerRadius: WFDesign.radiusSM))
+        .overlay(
+            RoundedRectangle(cornerRadius: WFDesign.radiusSM)
+                .strokeBorder(theme.border, lineWidth: 1)
+        )
+    }
+
+    /// Check if field type implies multiline display
+    private func isMultilineField(_ fieldType: WFFieldType) -> Bool {
+        switch fieldType {
+        case .text:
+            return true
+        case .objectArray:
+            return true
+        default:
+            return false
         }
     }
 

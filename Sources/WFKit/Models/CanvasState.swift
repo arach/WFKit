@@ -16,6 +16,68 @@ public struct CanvasSnapshot: Equatable, Sendable {
     }
 }
 
+// MARK: - Workflow Capture (Full Debug Snapshot)
+
+/// A complete capture of the workflow editor state including raw client input,
+/// current representation, and schema metadata. Used for debugging and snapshots.
+public struct WFWorkflowCapture: Codable, Sendable {
+    /// Timestamp when the capture was created
+    public let timestamp: Date
+
+    /// The raw input data as received from the client (before any transformation)
+    public let rawInput: Data?
+
+    /// The raw input as a string (for JSON/text inputs)
+    public var rawInputString: String? {
+        guard let data = rawInput else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The current workflow representation (nodes + connections)
+    public let currentState: WorkflowData
+
+    /// Schema metadata (node type names and field counts, not full schema)
+    public let schemaInfo: SchemaInfo?
+
+    /// Optional metadata from the client
+    public let clientMetadata: [String: String]?
+
+    public init(
+        rawInput: Data?,
+        currentState: WorkflowData,
+        schemaInfo: SchemaInfo?,
+        clientMetadata: [String: String]? = nil
+    ) {
+        self.timestamp = Date()
+        self.rawInput = rawInput
+        self.currentState = currentState
+        self.schemaInfo = schemaInfo
+        self.clientMetadata = clientMetadata
+    }
+
+    /// Lightweight schema info for capture (avoids serializing full schema)
+    public struct SchemaInfo: Codable, Sendable {
+        public let nodeTypeCount: Int
+        public let nodeTypeIds: [String]
+        public let totalFieldCount: Int
+
+        public init(nodeTypeCount: Int, nodeTypeIds: [String], totalFieldCount: Int) {
+            self.nodeTypeCount = nodeTypeCount
+            self.nodeTypeIds = nodeTypeIds
+            self.totalFieldCount = totalFieldCount
+        }
+    }
+
+    /// Export capture to JSON
+    public func toJSON() -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 // MARK: - Serializable Data
 
 public struct WorkflowData: Codable, Sendable {
@@ -35,6 +97,15 @@ public final class CanvasState {
     // MARK: - Workflow Data
     public var nodes: [WorkflowNode] = []
     public var connections: [WorkflowConnection] = []
+
+    // MARK: - Raw Input Capture
+
+    /// The raw input data as received from the client (before transformation).
+    /// Set this when loading data from your client to enable full capture/snapshots.
+    public var rawInput: Data?
+
+    /// Optional metadata from the client (e.g., source file path, workflow ID, version)
+    public var clientMetadata: [String: String]?
 
     // MARK: - Canvas Transform
     public var offset: CGSize = .zero
@@ -838,7 +909,10 @@ public final class CanvasState {
     // MARK: - Port Positions
 
     public func portPosition(nodeId: UUID, portId: UUID) -> CGPoint? {
-        guard let node = nodes.first(where: { $0.id == nodeId }) else { return nil }
+        guard let node = nodes.first(where: { $0.id == nodeId }) else {
+            WFLogger.warning("portPosition: Node not found - nodeId=\(nodeId.uuidString.prefix(8))", category: .connection)
+            return nil
+        }
 
         // Check inputs
         if let inputIndex = node.inputs.firstIndex(where: { $0.id == portId }) {
@@ -860,6 +934,8 @@ public final class CanvasState {
             )
         }
 
+        // Port not found - log details for debugging
+        WFLogger.warning("portPosition: Port not found - nodeId=\(nodeId.uuidString.prefix(8)), portId=\(portId.uuidString.prefix(8)), nodeTitle=\(node.title), inputPorts=[\(node.inputs.map { $0.id.uuidString.prefix(8) }.joined(separator: ", "))], outputPorts=[\(node.outputs.map { $0.id.uuidString.prefix(8) }.joined(separator: ", "))]", category: .connection)
         return nil
     }
 
@@ -1121,6 +1197,47 @@ public final class CanvasState {
         nodes = workflowData.nodes
         connections = workflowData.connections
         return true
+    }
+
+    /// Import JSON and store the raw input for capture
+    public func importJSON(_ json: String, storeRawInput: Bool) -> Bool {
+        if storeRawInput {
+            rawInput = json.data(using: .utf8)
+        }
+        return importJSON(json)
+    }
+
+    // MARK: - Full Capture
+
+    /// Create a complete capture of the workflow state for debugging/snapshots.
+    /// Includes raw input (if stored), current state, and schema metadata.
+    public func capture(schema: (any WFSchemaProvider)? = nil) -> WFWorkflowCapture {
+        let currentState = WorkflowData(nodes: nodes, connections: connections)
+
+        let schemaInfo: WFWorkflowCapture.SchemaInfo?
+        if let schema = schema {
+            let nodeTypes = schema.nodeTypes
+            let totalFields = nodeTypes.reduce(0) { $0 + $1.fields.count }
+            schemaInfo = WFWorkflowCapture.SchemaInfo(
+                nodeTypeCount: nodeTypes.count,
+                nodeTypeIds: nodeTypes.map { $0.id },
+                totalFieldCount: totalFields
+            )
+        } else {
+            schemaInfo = nil
+        }
+
+        return WFWorkflowCapture(
+            rawInput: rawInput,
+            currentState: currentState,
+            schemaInfo: schemaInfo,
+            clientMetadata: clientMetadata
+        )
+    }
+
+    /// Export a full capture as JSON string
+    public func exportCapture(schema: (any WFSchemaProvider)? = nil) -> String? {
+        capture(schema: schema).toJSON()
     }
 }
 

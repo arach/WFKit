@@ -1,6 +1,15 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Preference Key for Canvas Frame
+
+private struct CanvasFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Overlay Button Style
 
 private struct OverlayButtonStyle: ButtonStyle {
@@ -63,6 +72,7 @@ public struct WorkflowCanvas: View {
     @State private var scrollEventMonitor: Any?
     @State private var canvasSize: CGSize = .zero
     @State private var isMouseOverCanvas: Bool = false
+    @State private var canvasFrameInWindow: CGRect = .zero
     @State private var zoomTimer: Timer?
     @State private var contextMenuState = WFContextMenuState()
     @State private var rightClickMonitor: Any?
@@ -318,6 +328,17 @@ public struct WorkflowCanvas: View {
                 }
                 .onHover { hovering in
                     isMouseOverCanvas = hovering
+                }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: CanvasFramePreferenceKey.self,
+                            value: geo.frame(in: .global)
+                        )
+                    }
+                )
+                .onPreferenceChange(CanvasFramePreferenceKey.self) { frame in
+                    canvasFrameInWindow = frame
                 }
         }
     }
@@ -686,11 +707,27 @@ public struct WorkflowCanvas: View {
 
         scrollEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             // Only handle scroll events over the canvas, let others pass through
-            if self.isMouseOverCanvas {
-                self.handleScrollWheel(event: event)
-                return nil // Consume the event to prevent propagation
+            // Use hover state combined with x-position check for inspector
+            guard self.isMouseOverCanvas else { return event }
+
+            // Additional check: if we have a valid canvas frame, verify mouse is within canvas X bounds
+            // This catches the case where hover doesn't update correctly when inspector is open
+            if self.canvasFrameInWindow.width > 0,
+               let window = event.window {
+                let mouseInWindow = event.locationInWindow
+                // Inspector is on the right, so check if mouse X is within canvas width
+                // (accounting for window content view coordinate conversion)
+                if let contentView = window.contentView {
+                    let mouseInView = contentView.convert(mouseInWindow, from: nil)
+                    // If mouse X is beyond canvas width, it's over the inspector
+                    if mouseInView.x > self.canvasFrameInWindow.width {
+                        return event // Let inspector handle it
+                    }
+                }
             }
-            return event // Pass through for other views (like Inspector ScrollView)
+
+            self.handleScrollWheel(event: event)
+            return nil // Consume the event to prevent propagation
         }
 
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in

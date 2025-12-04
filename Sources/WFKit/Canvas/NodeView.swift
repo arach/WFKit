@@ -93,19 +93,19 @@ public struct NodeView: View {
             }
             .frame(width: node.size.width, height: node.size.height)
 
-            // Input ports - positioned at left edge
+            // Input ports - positioned at left edge (50/50 overlap with edge)
             inputPorts
                 .opacity(showPorts ? 1 : 0)
                 .allowsHitTesting(showPorts)
                 .animation(.easeOut(duration: 0.15), value: showPorts)
-                .offset(x: -node.size.width / 2 - portExtension / 2)
+                .offset(x: -node.size.width / 2)
 
-            // Output ports - positioned at right edge
+            // Output ports - positioned at right edge (50/50 overlap with edge)
             outputPorts
                 .opacity(showPorts ? 1 : 0)
                 .allowsHitTesting(showPorts)
                 .animation(.easeOut(duration: 0.15), value: showPorts)
-                .offset(x: node.size.width / 2 + portExtension / 2)
+                .offset(x: node.size.width / 2)
         }
         // Expand frame to include port hit areas
         .frame(width: node.size.width + portExtension * 2, height: node.size.height)
@@ -505,6 +505,7 @@ struct PortView: View {
     @State private var isDragging: Bool = false
     @State private var pulsePhase: CGFloat = 0
     @Environment(\.wfTheme) private var theme
+    @Environment(\.wfReadOnly) private var isReadOnly
 
     private let portSize: CGFloat = 12
 
@@ -632,6 +633,9 @@ struct PortView: View {
             }
         }
         .onTapGesture {
+            // Don't allow connection creation in read-only mode
+            guard !isReadOnly else { return }
+
             portLogger.info("tap: \(port.label, privacy: .public) isInput=\(port.isInput) connectionActive=\(isConnectionDragActive) isValidTarget=\(isValidDropTarget)")
 
             if isConnectionDragActive {

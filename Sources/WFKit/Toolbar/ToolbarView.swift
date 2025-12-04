@@ -116,11 +116,16 @@ public struct ToolbarView: View {
 
 // MARK: - Node Palette View
 
-struct NodePaletteView: View {
+public struct NodePaletteView: View {
     @Bindable var state: CanvasState
     @Binding var isPresented: Bool
 
-    var body: some View {
+    public init(state: CanvasState, isPresented: Binding<Bool>) {
+        self.state = state
+        self._isPresented = isPresented
+    }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add Node")
                 .font(.headline)

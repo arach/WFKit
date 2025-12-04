@@ -18,14 +18,80 @@ struct WorkflowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var canvasState = CanvasState.sampleState()
     @State private var themeManager = WFThemeManager()
+    @State private var showInspector = true
+    @State private var showNodePalette = false
 
     var body: some Scene {
         WindowGroup {
-            WFWorkflowEditor(state: canvasState)
+            WFWorkflowEditor(state: canvasState, showInspector: $showInspector)
                 .environment(\.wfTheme, themeManager)
                 .frame(minWidth: 800, minHeight: 600)
+                .toolbar {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Button(action: { showNodePalette.toggle() }) {
+                            Label("Add Node", systemImage: "plus.circle.fill")
+                        }
+                        .popover(isPresented: $showNodePalette) {
+                            NodePaletteView(state: canvasState, isPresented: $showNodePalette)
+                        }
+                    }
+
+                    ToolbarItemGroup(placement: .secondaryAction) {
+                        // Style picker
+                        Menu {
+                            ForEach(WFStyle.allCases) { style in
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        themeManager.style = style
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: style.icon)
+                                        Text(style.displayName)
+                                        if themeManager.style == style {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label(themeManager.style.displayName, systemImage: themeManager.style.icon)
+                        }
+
+                        // Appearance picker
+                        Menu {
+                            ForEach(WFAppearance.allCases) { appearance in
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        themeManager.appearance = appearance
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: appearance.icon)
+                                        Text(appearance.displayName)
+                                        if themeManager.appearance == appearance {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label(themeManager.appearance.displayName, systemImage: themeManager.appearance.icon)
+                        }
+                    }
+
+                    ToolbarItemGroup(placement: .status) {
+                        HStack(spacing: 12) {
+                            Label("\(canvasState.nodes.count)", systemImage: "square.stack.3d.up")
+                                .font(.system(size: 11, design: .monospaced))
+                            Label("\(canvasState.connections.count)", systemImage: "arrow.right")
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") {
